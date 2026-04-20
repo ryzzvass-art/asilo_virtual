@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from usuarios.models import Usuario
+from rest_framework_simplejwt.tokens import RefreshToken
 
 
 class UsuarioSerializer(serializers.ModelSerializer):
@@ -102,3 +103,41 @@ class UsuarioListSerializer(serializers.ModelSerializer):
             'created_at',
         ]
         read_only_fields = fields
+
+class LoginSerializer(serializers.Serializer):
+    """
+    Serializer para el login.
+    Recibe email y password, valida las credenciales
+    y devuelve los tokens JWT.
+    """
+    email    = serializers.EmailField()
+    password = serializers.CharField(write_only=True)
+
+    def validate(self, data):
+        email    = data.get('email').lower()
+        password = data.get('password')
+
+        # Buscar el usuario por email
+        try:
+            usuario = Usuario.objects.get(email=email)
+        except Usuario.DoesNotExist:
+            raise serializers.ValidationError(
+                "Credenciales inválidas."
+            )
+
+        # Verificar que la contraseña sea correcta
+        if not usuario.check_password(password):
+            raise serializers.ValidationError(
+                "Credenciales inválidas."
+            )
+
+        # Verificar que el usuario esté activo
+        if usuario.estado == Usuario.Estado.INACTIVO:
+            raise serializers.ValidationError(
+                "Cuenta deshabilitada. Contacte al administrador."
+            )
+
+        # Guardar el usuario en los datos validados
+        # para usarlo después en la vista
+        data['usuario'] = usuario
+        return data      

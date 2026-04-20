@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 from pathlib import Path
 from decouple import config
+from datetime import timedelta
 
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -144,7 +145,23 @@ REST_FRAMEWORK = {
     'DEFAULT_PARSER_CLASSES': [
         'rest_framework.parsers.JSONParser',
     ],
+    # Agregar autenticación JWT por defecto
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
 }
 
 # Modelo de usuario personalizado
 AUTH_USER_MODEL = 'usuarios.Usuario'
+
+# Configuración de JWT
+SIMPLE_JWT = {
+    # El access token dura 8 horas (RF-03)
+    'ACCESS_TOKEN_LIFETIME': timedelta(hours=8),
+    # El refresh token dura 1 día
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
+    'AUTH_HEADER_TYPES': ('Bearer',),
+    # Usar el campo email en lugar de username
+    'USER_ID_FIELD': 'id',
+    'USER_ID_CLAIM': 'user_id',
+}

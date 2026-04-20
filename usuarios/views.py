@@ -3,6 +3,12 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 
+from usuarios.serializers import UsuarioSerializer, UsuarioListSerializer, LoginSerializer
+from rest_framework_simplejwt.tokens import RefreshToken
+from django.utils import timezone
+from rest_framework.views import APIView
+
+
 from usuarios.models import Usuario
 from usuarios.serializers import UsuarioSerializer, UsuarioListSerializer
 
@@ -116,3 +122,47 @@ class UsuarioViewSet(viewsets.ModelViewSet):
                 "usuario": UsuarioListSerializer(usuario).data
             }
         )
+    
+    
+
+class LoginView(APIView):
+    """
+    Endpoint de login.
+    POST /api/auth/login/
+    
+    Recibe email y password.
+    Devuelve access token, refresh token y datos del usuario.
+    """
+    # Login no requiere autenticación previa
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = LoginSerializer(data=request.data)
+
+        if not serializer.is_valid():
+            return Response(
+                serializer.errors,
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        usuario = serializer.validated_data['usuario']
+
+        # Actualizar ultimo_login
+        usuario.ultimo_login = timezone.now()
+        usuario.save(update_fields=['ultimo_login'])
+
+        # Generar los tokens JWT para este usuario
+        refresh = RefreshToken.for_user(usuario)
+
+        return Response({
+            "mensaje": f"Bienvenido, {usuario.nombre}.",
+            "access":  str(refresh.access_token),
+            "refresh": str(refresh),
+            "usuario": {
+                "id":      usuario.id,
+                "nombre":  usuario.nombre,
+                "apellido":usuario.apellido,
+                "email":   usuario.email,
+                "rol":     usuario.rol,
+            }
+        }, status=status.HTTP_200_OK)
