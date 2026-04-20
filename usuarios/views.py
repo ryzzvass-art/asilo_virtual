@@ -2,13 +2,16 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
-
+#token
 from usuarios.serializers import UsuarioSerializer, UsuarioListSerializer, LoginSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.utils import timezone
 from rest_framework.views import APIView
 
+#permisos
+from usuarios.permissions import IsAdministrador, IsAdminOrCuidador
 
+#propios
 from usuarios.models import Usuario
 from usuarios.serializers import UsuarioSerializer, UsuarioListSerializer
 
@@ -42,16 +45,17 @@ class UsuarioViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         """
-        Define quién puede hacer qué:
-        - Crear usuario: solo administradores autenticados
-        - Ver lista y detalle: solo autenticados
-        """
-        if self.action == 'create':
-            # Por ahora AllowAny para poder probar sin token
-            # En Sprint 5 lo cambiaremos a IsAuthenticated
-            permission_classes = [AllowAny]
+    Define quién puede hacer qué en cada acción:
+    - Crear usuario:         solo Administrador
+    - Listar usuarios:       solo Administrador
+    - Ver detalle:           Administrador o Cuidador
+    - Cambiar estado:        solo Administrador
+    """
+        if self.action in ['create', 'list', 'cambiar_estado']:
+                       
+            permission_classes = [IsAdministrador]
         else:
-            permission_classes = [IsAuthenticated]
+            permission_classes = [IsAdminOrCuidador]
         return [permission() for permission in permission_classes]
 
     def create(self, request, *args, **kwargs):
