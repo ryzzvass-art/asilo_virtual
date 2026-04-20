@@ -1,6 +1,9 @@
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
-
+#resete token
+import uuid
+from django.utils import timezone
+from datetime import timedelta
 
 # ── MANAGER ──────────────────────────────────────────────────────────────────
 # El Manager es el que sabe cómo CREAR usuarios.
@@ -119,3 +122,50 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
     @property
     def es_cuidador(self):
         return self.rol == self.Rol.CUIDADOR
+    
+
+class PasswordResetToken(models.Model):
+    """
+    Tokens temporales para recuperación de contraseña.
+    - Cada token es un UUID único
+    - Expira 1 hora después de ser creado
+    - Una vez usado, no puede reutilizarse (campo 'usado')
+    - Al pedir nuevo token, los anteriores del usuario se invalidan (ver T-13)
+    """
+ 
+    usuario = models.ForeignKey(
+        'Usuario',                      # FK → usuarios.id
+        on_delete=models.CASCADE,       # Si se borra el usuario, se borran sus tokens
+        related_name='reset_tokens'
+    )
+    token = models.UUIDField(
+        default=uuid.uuid4,             # Genera UUID aleatorio automáticamente
+        unique=True,                    # No puede repetirse en toda la tabla
+        editable=False
+    )
+    expira_en = models.DateTimeField()  # Se calcula en save(): created_at + 1 hora
+    usado = models.BooleanField(
+        default=False                   # True = ya fue utilizado, no se puede reusar
+    )
+ 
+    class Meta:
+        db_table = 'password_reset_tokens'
+        verbose_name = 'Token de recuperación'
+        verbose_name_plural = 'Tokens de recuperación'
+ 
+    def save(self, *args, **kwargs):
+        # Si es un token nuevo (sin pk), calcular expiración = ahora + 1 hora
+        if not self.pk:
+            self.expira_en = timezone.now() + timedelta(hours=1)
+        super().save(*args, **kwargs)
+ 
+    def is_valid(self):
+        """
+        Retorna True si el token es usable:
+        - No fue usado todavía
+        - No expiró (expira_en > ahora)
+        """
+        return not self.usado and self.expira_en > timezone.now()
+ 
+    def __str__(self):
+        return f"Token de {self.usuario.email} — {'usado' if self.usado else 'activo'}"

@@ -1,6 +1,8 @@
 from rest_framework import serializers
 from usuarios.models import Usuario
 from rest_framework_simplejwt.tokens import RefreshToken
+import uuid
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 
 class UsuarioSerializer(serializers.ModelSerializer):
@@ -140,4 +142,87 @@ class LoginSerializer(serializers.Serializer):
         # Guardar el usuario en los datos validados
         # para usarlo después en la vista
         data['usuario'] = usuario
-        return data      
+        return data  
+
+
+class SolicitarResetSerializer(serializers.Serializer):
+    """
+    Solo necesita el email del usuario.
+    Valida que el email exista en la base de datos.
+    """
+    email = serializers.EmailField()
+ 
+    def validate_email(self, value):
+        # Convertir a minúsculas para evitar problemas de mayúsculas
+        value = value.lower()
+        # Verificar que exista un usuario con ese email
+        if not Usuario.objects.filter(email=value, estado='activo').exists():
+            # SEGURIDAD: no revelamos si el email existe o no
+            # Retornamos el email igual para procesar en la vista
+            pass
+        return value
+class ConfirmarResetSerializer(serializers.Serializer):
+    """
+    Recibe el token UUID y la nueva contraseña.
+    Valida que la nueva contraseña tenga al menos 8 caracteres.
+    """
+    token = serializers.UUIDField()
+    nueva_password = serializers.CharField(
+        min_length=8,
+        write_only=True   # Nunca se devuelve en la respuesta
+    )
+    confirmar_password = serializers.CharField(
+        min_length=8,
+        write_only=True
+    )
+ 
+    def validate(self, data):
+        # Verificar que las dos contraseñas coincidan
+        if data['nueva_password'] != data['confirmar_password']:
+            raise serializers.ValidationError(
+                {"confirmar_password": "Las contraseñas no coinciden."}
+            )
+        return data
+class CambiarEstadoUsuarioSerializer(serializers.Serializer):
+    """
+    Solo acepta los dos valores válidos para estado de usuario.
+    """
+    estado = serializers.ChoiceField(
+        choices=['activo', 'inactivo']
+    )
+class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
+    """
+    Extiende el serializer de SimpleJWT para agregar
+    la verificación de estado del usuario.
+ 
+    Si el usuario existe y la contraseña es correcta PERO
+    el estado es 'inactivo', rechaza con 401.
+    """
+ 
+    def validate(self, attrs):
+        # Primero ejecuta la validación normal de SimpleJWT
+        # (verifica email + contraseña)
+        try:
+            data = super().validate(attrs)
+        except Exception:
+            # Si falla autenticación normal, dejar que SimpleJWT maneje el error
+            raise
+ 
+        # En este punto, self.user ya tiene el usuario autenticado
+        # Ahora verificamos el estado adicional
+        if self.user.estado == 'inactivo':
+            raise serializers.ValidationError(
+                {"detail": "Cuenta deshabilitada. Contacta al administrador."}
+            )
+ 
+        # Opcional: agregar datos extra al token o a la respuesta
+        data['usuario'] = {
+            'id': self.user.pk,
+            'nombre': self.user.nombre,
+            'apellido': self.user.apellido,
+            'email': self.user.email,
+            'rol': self.user.rol,
+        }
+ 
+        return data
+ 

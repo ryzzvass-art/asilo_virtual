@@ -2,18 +2,20 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
-#token
 from usuarios.serializers import UsuarioSerializer, UsuarioListSerializer, LoginSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.utils import timezone
 from rest_framework.views import APIView
-
-#permisos
 from usuarios.permissions import IsAdministrador, IsAdminOrCuidador
+from django.core.mail import send_mail
+from django.conf import settings
+from .models import Usuario, PasswordResetToken
+from .serializers import SolicitarResetSerializer
+from .serializers import ConfirmarResetSerializer
+from .serializers import CambiarEstadoUsuarioSerializer
+from rest_framework_simplejwt.views import TokenObtainPairView
+from .serializers import CustomTokenObtainPairSerializer
 
-#propios
-from usuarios.models import Usuario
-from usuarios.serializers import UsuarioSerializer, UsuarioListSerializer
 
 
 class UsuarioViewSet(viewsets.ModelViewSet):
@@ -170,3 +172,202 @@ class LoginView(APIView):
                 "rol":     usuario.rol,
             }
         }, status=status.HTTP_200_OK)
+
+#reset paswword
+
+class SolicitarPasswordResetView(APIView):
+    """
+    POST /api/auth/password-reset/solicitar/
+ 
+    Qué hace:
+    1. Recibe el email
+    2. Busca el usuario
+    3. Invalida tokens anteriores del mismo usuario
+    4. Crea un nuevo token
+    5. Envía el email con el enlace de recuperación
+ 
+    Seguridad: siempre devuelve 200, aunque el email no exista
+    (para no revelar qué emails están registrados)
+    """
+    permission_classes = [AllowAny]  # No requiere estar autenticado
+ 
+    def post(self, request):
+        serializer = SolicitarResetSerializer(data=request.data)
+ 
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+ 
+        email = serializer.validated_data['email']
+ 
+        # Buscar usuario (puede no existir — ver nota de seguridad abajo)
+        try:
+            usuario = Usuario.objects.get(email=email, estado='activo')
+        except Usuario.DoesNotExist:
+            # SEGURIDAD: no revelamos que el email no existe
+            # Respondemos igual que si hubiera funcionado
+            return Response(
+                {"mensaje": "Si el email está registrado, recibirás un enlace en minutos."},
+                status=status.HTTP_200_OK
+            )
+ 
+        # Invalidar todos los tokens anteriores de este usuario
+        # (evita que haya múltiples tokens válidos al mismo tiempo)
+        PasswordResetToken.objects.filter(
+            usuario=usuario,
+            usado=False
+        ).update(usado=True)
+ 
+        # Crear nuevo token (expira_en se calcula automáticamente en save())
+        nuevo_token = PasswordResetToken.objects.create(usuario=usuario)
+ 
+        # Construir el enlace de recuperación
+        # En producción: usar settings.FRONTEND_URL
+        # En desarrollo: ajusta la URL según tu frontend
+        reset_link = f"http://localhost:3000/reset-password?token={nuevo_token.token}"
+ 
+        # Enviar email
+        send_mail(
+            subject="Recuperación de contraseña — Asilo Virtual",
+            message=f"""
+Hola {usuario.nombre},
+ 
+Recibiste este email porque solicitaste recuperar tu contraseña.
+ 
+Haz clic en el siguiente enlace (válido por 1 hora):
+{reset_link}
+ 
+Si no solicitaste esto, ignora este mensaje.
+ 
+— Sistema Asilo Virtual
+            """,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[usuario.email],
+            fail_silently=False,
+        )
+ 
+        return Response(
+            {"mensaje": "Si el email está registrado, recibirás un enlace en minutos."},
+            status=status.HTTP_200_OK
+        )
+
+
+
+class ConfirmarPasswordResetView(APIView):
+    """
+    POST /api/auth/password-reset/confirmar/
+ 
+    Qué hace:
+    1. Recibe el token y la nueva contraseña
+    2. Busca el token en la base de datos
+    3. Verifica que sea válido (no expirado, no usado)
+    4. Actualiza la contraseña del usuario
+    5. Marca el token como usado=True (no se puede reusar)
+ 
+    Errores posibles:
+    - Token no existe → 400
+    - Token expirado  → 400
+    - Token ya usado  → 400
+    - Passwords no coinciden → 400
+    """
+    permission_classes = [AllowAny]  # No requiere estar autenticado
+ 
+    def post(self, request):
+        serializer = ConfirmarResetSerializer(data=request.data)
+ 
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+ 
+        token_uuid = serializer.validated_data['token']
+        nueva_password = serializer.validated_data['nueva_password']
+ 
+        # Buscar el token en la base de datos
+        try:
+            reset_token = PasswordResetToken.objects.select_related('usuario').get(
+                token=token_uuid
+            )
+        except PasswordResetToken.DoesNotExist:
+            return Response(
+                {"error": "Token inválido o no existe."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+ 
+        # Verificar que el token sea válido (no expirado y no usado)
+        if not reset_token.is_valid():
+            if reset_token.usado:
+                mensaje = "Este enlace ya fue utilizado. Solicita uno nuevo."
+            else:
+                mensaje = "Este enlace expiró (validez: 1 hora). Solicita uno nuevo."
+ 
+            return Response(
+                {"error": mensaje},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+ 
+        # Token válido → actualizar contraseña
+        usuario = reset_token.usuario
+        usuario.set_password(nueva_password)   # set_password encripta con bcrypt automáticamente
+        usuario.save()
+ 
+        # Marcar el token como usado para que no pueda reutilizarse
+        reset_token.usado = True
+        reset_token.save()
+ 
+        return Response(
+            {"mensaje": "Contraseña actualizada correctamente. Ya puedes iniciar sesión."},
+            status=status.HTTP_200_OK
+        )
+class UsuarioEstadoView(APIView):
+    """
+    PATCH /api/usuarios/{id}/estado/
+ 
+    Cambia el estado de un usuario a 'activo' o 'inactivo'.
+ 
+    Reglas:
+    - Solo el Administrador puede usar este endpoint (403 para Cuidador)
+    - Un usuario no puede cambiar su propio estado
+    - El registro NUNCA se elimina: soft delete
+    """
+    permission_classes = [IsAdministrador]  # Tu permiso personalizado del T-09
+ 
+    def patch(self, request, pk):
+        # Obtener el usuario que se quiere modificar
+        try:
+            usuario = Usuario.objects.get(pk=pk)
+        except Usuario.DoesNotExist:
+            return Response(
+                {"error": "Usuario no encontrado."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+ 
+        # Seguridad: un admin no puede desactivarse a sí mismo
+        if request.user.pk == usuario.pk:
+            return Response(
+                {"error": "No puedes cambiar tu propio estado."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+ 
+        serializer = CambiarEstadoUsuarioSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+ 
+        nuevo_estado = serializer.validated_data['estado']
+ 
+        # Actualizar solo el campo estado (no toca otros campos)
+        usuario.estado = nuevo_estado
+        usuario.save(update_fields=['estado'])
+ 
+        return Response(
+            {
+                "mensaje": f"Usuario {'activado' if nuevo_estado == 'activo' else 'desactivado'} correctamente.",
+                "id": usuario.pk,
+                "email": usuario.email,
+                "estado": usuario.estado
+            },
+            status=status.HTTP_200_OK
+        )
+class CustomTokenObtainPairView(TokenObtainPairView):
+    """
+    Vista de login personalizada que usa nuestro serializer extendido.
+    Reemplaza la vista por defecto de SimpleJWT.
+    """
+    serializer_class = CustomTokenObtainPairSerializer
