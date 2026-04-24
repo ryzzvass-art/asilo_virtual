@@ -30,11 +30,13 @@ DEBUG = config('DEBUG', cast=bool)
 
 ALLOWED_HOSTS = []
 
-#Configuracion Email por ahora esta por defecto
+#Configuracion Email para pruebas normales
 
 #EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 #DEFAULT_FROM_EMAIL = 'noreply@asilo-virtual.com'
-# Para producción (con SMTP real, ej: Gmail):
+
+
+#Para pruebas reales
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 465
