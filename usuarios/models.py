@@ -64,6 +64,11 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
         ACTIVO   = "activo",   "Activo"
         INACTIVO = "inactivo", "Inactivo"
 
+    # ─── Eliminar campos automáticos de Django que no usamos ───
+
+    last_login = None       # AbstractBaseUser lo agrega por defecto
+    is_superuser = None     # PermissionsMixin lo agrega por defecto
+
     # ── CAMPOS DE LA TABLA ────────────────────────────────────────────────────
     nombre       = models.CharField(max_length=100)
     apellido     = models.CharField(max_length=100)
@@ -121,8 +126,7 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
 
     @property
     def es_cuidador(self):
-        return self.rol == self.Rol.CUIDADOR
-    
+        return self.rol == self.Rol.CUIDADOR      
 
 class PasswordResetToken(models.Model):
     """

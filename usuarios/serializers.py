@@ -3,6 +3,8 @@ from usuarios.models import Usuario
 from rest_framework_simplejwt.tokens import RefreshToken
 import uuid
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from django.utils import timezone
+
 
 
 class UsuarioSerializer(serializers.ModelSerializer):
@@ -214,6 +216,8 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             raise serializers.ValidationError(
                 {"detail": "Cuenta deshabilitada. Contacta al administrador."}
             )
+        self.user.ultimo_login = timezone.now()
+        self.user.save(update_fields=['ultimo_login'])
  
         # Opcional: agregar datos extra al token o a la respuesta
         data['usuario'] = {

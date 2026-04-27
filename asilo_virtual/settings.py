@@ -60,7 +60,7 @@ INSTALLED_APPS = [
     'rest_framework',
     #Apps del Proyecto
     'usuarios',
-    'residentes',
+    'residentes.apps.ResidentesConfig', 
     'medicamentos',
     'nutricion',
     'actividades',
