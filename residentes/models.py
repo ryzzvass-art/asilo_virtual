@@ -128,3 +128,70 @@ class ContactoEmergencia(models.Model):
 
     def __str__(self):
         return f"{self.tipo} de {self.residente}: {self.nombre}"
+
+# SPRINT 3 — T-29, T-34
+
+
+class ObservacionDiaria(models.Model):
+    """
+    Observaciones del cuidador sobre estado físico y emocional del residente.
+    fecha_hora es auto_now_add=True — no editable por el usuario nunca.
+    """
+    residente = models.ForeignKey(
+        Residente,
+        on_delete=models.CASCADE,
+        related_name='observaciones'
+    )
+    registrado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name='observaciones_registradas'
+    )
+    estado_fisico    = models.TextField()
+    estado_emocional = models.TextField()
+
+    # auto_now_add=True → se genera automáticamente, el cliente nunca lo envía
+    fecha_hora = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'observaciones_diarias'
+        ordering = ['-fecha_hora']   # Más reciente primero por defecto
+
+    def __str__(self):
+        return f"Observación de {self.residente} — {self.fecha_hora:%Y-%m-%d %H:%M}"
+
+
+class TurnoMedico(models.Model):
+    """
+    Consultas médicas del residente.
+    El asilo tiene un único médico general — sin FK a médico externo.
+    """
+    class TipoConsulta(models.TextChoices):
+        CONTROL_RUTINARIO = "control_rutinario", "Control rutinario"
+        URGENCIA          = "urgencia",          "Urgencia"
+        SEGUIMIENTO       = "seguimiento",       "Seguimiento"
+
+    residente = models.ForeignKey(
+        Residente,
+        on_delete=models.CASCADE,
+        related_name='turnos_medicos'
+    )
+    registrado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name='turnos_registrados'
+    )
+    tipo_consulta = models.CharField(
+        max_length=20,
+        choices=TipoConsulta.choices
+    )
+    observaciones = models.TextField()
+    fecha_hora    = models.DateTimeField()   # El usuario SÍ elige la fecha/hora del turno
+
+    class Meta:
+        db_table = 'turnos_medicos'
+        ordering = ['-fecha_hora']
+
+    def __str__(self):
+        return f"Turno {self.tipo_consulta} — {self.residente} ({self.fecha_hora:%Y-%m-%d})"
+

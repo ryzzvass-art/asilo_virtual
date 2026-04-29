@@ -9,7 +9,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
 
-from .models import Residente, HistorialMedico, ContactoEmergencia
+from .models import Residente, HistorialMedico, ContactoEmergencia, ObservacionDiaria, TurnoMedico
 from .serializers import (
     ResidenteSerializer,
     ResidenteDetalleSerializer,
@@ -18,6 +18,7 @@ from .serializers import (
     ContactoEmergenciaSerializer,
     ContactoEmergenciaCreateSerializer,
     HistorialMedicoSerializer,
+    ObservacionDiariaSerializer,TurnoMedicoSerializer
 )
 
 # Importar los permisos personalizados del Sprint 1
@@ -257,3 +258,143 @@ class HistorialMedicoView(APIView):
         serializer.save(actualizado_por=request.user)
 
         return Response(serializer.data)
+
+# SPRINT 3 — Views
+# T-30, T-31, T-32, T-33 — Observaciones diarias 
+
+
+class ObservacionListCreateView(APIView):
+    """
+    GET  /api/residentes/{id}/observaciones/         → lista paginada (T-32)
+    POST /api/residentes/{id}/observaciones/         → crear (T-30)
+    """
+    permission_classes = [IsAdminOrCuidador]
+
+    def get(self, request, pk):
+        """
+        T-32: Lista ordenada de más reciente a más antigua.
+        Filtro opcional: ?fecha=YYYY-MM-DD
+        """
+        residente = get_object_or_404(Residente, pk=pk)
+        queryset  = ObservacionDiaria.objects.filter(
+            residente=residente
+        ).select_related('registrado_por')   # Evita N+1 queries
+
+        # Filtro por fecha específica
+        fecha = request.query_params.get('fecha')
+        if fecha:
+            queryset = queryset.filter(fecha_hora__date=fecha)
+
+        # Paginación
+        page      = int(request.query_params.get('page', 1))
+        page_size = 20
+        start     = (page - 1) * page_size
+        end       = start + page_size
+        total     = queryset.count()
+
+        serializer = ObservacionDiariaSerializer(queryset[start:end], many=True)
+        return Response({
+            'total':   total,
+            'page':    page,
+            'pages':   (total + page_size - 1) // page_size,
+            'results': serializer.data,
+        })
+
+    def post(self, request, pk):
+        """
+        T-30: Crear observación.
+        fecha_hora se genera automáticamente — se ignora si el cliente lo envía.
+        """
+        residente  = get_object_or_404(Residente, pk=pk)
+        serializer = ObservacionDiariaSerializer(data=request.data)
+
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer.save(
+            residente=residente,
+            registrado_por=request.user
+            # fecha_hora NO se pasa — auto_now_add lo genera solo
+        )
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+class ObservacionDetailView(APIView):
+    """
+    GET /api/residentes/{id}/observaciones/{obs_id}/  → detalle (ST-31)
+    """
+    permission_classes = [IsAdminOrCuidador]
+
+    def get(self, request, pk, obs_id):
+        residente    = get_object_or_404(Residente, pk=pk)
+        observacion  = get_object_or_404(
+            ObservacionDiaria, pk=obs_id, residente=residente
+        )
+        serializer = ObservacionDiariaSerializer(observacion)
+        return Response(serializer.data)
+
+
+# ── T-35, T-36, T-37, T-38 — Turnos médicos ───────────────
+
+class TurnoMedicoListCreateView(APIView):
+    """
+    GET  /api/residentes/{id}/turnos/  → listar turnos (T-36)
+    POST /api/residentes/{id}/turnos/  → crear turno   (T-35)
+    """
+    permission_classes = [IsAdminOrCuidador]
+
+    def get(self, request, pk):
+        """
+        T-36, T-37, T-38: Lista con filtros opcionales.
+        ?tipo_consulta=urgencia
+        ?fecha_desde=YYYY-MM-DD
+        ?fecha_hasta=YYYY-MM-DD
+        """
+        residente = get_object_or_404(Residente, pk=pk)
+        queryset  = TurnoMedico.objects.filter(
+            residente=residente
+        ).select_related('registrado_por')
+
+        # T-37: filtro por tipo_consulta — valida que sea un valor válido
+        tipo = request.query_params.get('tipo_consulta')
+        if tipo:
+            tipos_validos = [t[0] for t in TurnoMedico.TipoConsulta.choices]
+            if tipo not in tipos_validos:
+                return Response(
+                    {"error": f"tipo_consulta inválido. Opciones: {tipos_validos}"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            queryset = queryset.filter(tipo_consulta=tipo)
+
+        # T-38: filtros por rango de fechas
+        fecha_desde = request.query_params.get('fecha_desde')
+        fecha_hasta = request.query_params.get('fecha_hasta')
+
+        if fecha_desde:
+            queryset = queryset.filter(fecha_hora__date__gte=fecha_desde)
+        if fecha_hasta:
+            queryset = queryset.filter(fecha_hora__date__lte=fecha_hasta)
+
+        serializer = TurnoMedicoSerializer(queryset, many=True)
+        return Response(serializer.data)
+
+    def post(self, request, pk):
+        """T-35: Crear turno médico. Solo admin puede registrar."""
+        if not request.user.es_administrador:
+            return Response(
+                {"error": "Solo el Administrador puede registrar turnos médicos."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        residente  = get_object_or_404(Residente, pk=pk)
+        serializer = TurnoMedicoSerializer(data=request.data)
+
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer.save(
+            residente=residente,
+            registrado_por=request.user
+        )
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+

@@ -5,6 +5,8 @@
 
 from rest_framework import serializers
 from .models import Residente, HistorialMedico, ContactoEmergencia
+from .models import ObservacionDiaria, TurnoMedico
+              
 
 
 # ============================================================
@@ -147,3 +149,55 @@ class HistorialMedicoSerializer(serializers.ModelSerializer):
         if obj.actualizado_por:
             return f"{obj.actualizado_por.nombre} {obj.actualizado_por.apellido}"
         return None
+    
+# ── T-30, T-32, T-33 — Observaciones ──────────────────────
+
+class ObservacionDiariaSerializer(serializers.ModelSerializer):
+    """
+    Para crear y listar observaciones.
+    fecha_hora y registrado_por son de solo lectura — se asignan automáticamente.
+    registrado_por_nombre: nombre completo del cuidador sin exponer el ID.
+    """
+    registrado_por_nombre = serializers.SerializerMethodField()
+
+    class Meta:
+        model  = ObservacionDiaria
+        fields = [
+            'id', 'estado_fisico', 'estado_emocional',
+            'registrado_por', 'registrado_por_nombre', 'fecha_hora',
+        ]
+        read_only_fields = ['registrado_por', 'registrado_por_nombre', 'fecha_hora']
+
+    def get_registrado_por_nombre(self, obj):
+        # T-33: datos denormalizados del registrador para no hacer segunda consulta
+        return f"{obj.registrado_por.nombre} {obj.registrado_por.apellido}"
+
+
+# ── T-35, T-36, T-37, T-38 — Turnos médicos ───────────────
+
+class TurnoMedicoSerializer(serializers.ModelSerializer):
+    """
+    Para crear y listar turnos médicos.
+    tipo_consulta valida que solo acepte los 3 valores definidos en choices.
+    """
+    registrado_por_nombre = serializers.SerializerMethodField()
+
+    class Meta:
+        model  = TurnoMedico
+        fields = [
+            'id', 'tipo_consulta', 'observaciones', 'fecha_hora',
+            'registrado_por', 'registrado_por_nombre',
+        ]
+        read_only_fields = ['registrado_por', 'registrado_por_nombre']
+
+    def get_registrado_por_nombre(self, obj):
+        return f"{obj.registrado_por.nombre} {obj.registrado_por.apellido}"
+
+    def validate_tipo_consulta(self, value):
+        # T-37: valor inválido devuelve 400
+        tipos_validos = [t[0] for t in TurnoMedico.TipoConsulta.choices]
+        if value not in tipos_validos:
+            raise serializers.ValidationError(
+                f"Tipo inválido. Opciones: {tipos_validos}"
+            )
+        return value

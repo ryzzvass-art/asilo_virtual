@@ -11,6 +11,9 @@ from .views import (
     ContactoEmergenciaView,
     ContactoEmergenciaDetailView,
     HistorialMedicoView,
+    ObservacionListCreateView,
+    ObservacionDetailView,
+    TurnoMedicoListCreateView,
 )
 
 urlpatterns = [
@@ -40,4 +43,26 @@ urlpatterns = [
     # GET   /api/residentes/{id}/historial/ → ver     (T-26)
     # PATCH /api/residentes/{id}/historial/ → editar  (T-27)
     path('residentes/<int:pk>/historial/', HistorialMedicoView.as_view(), name='historial-detail'),
+
+    #     # ── Observaciones diarias ───────────────────────────────
+      #GET  /api/residentes/{id}/observaciones/              # listar (T-32)
+      #POST /api/residentes/{id}/observaciones/              # crear  (T-30)
+      path('residentes/<int:pk>/observaciones/',
+          ObservacionListCreateView.as_view(),
+          name='observacion-list-create'),
+
+      #GET /api/residentes/{id}/observaciones/{obs_id}/       #detalle (ST-31)
+     path('residentes/<int:pk>/observaciones/<int:obs_id>/',
+          ObservacionDetailView.as_view(), 
+          name='observacion-detail'),
+
+     # ── Turnos médicos ─────────────────────────────────────
+      #GET  /api/residentes/{id}/turnos/                     # listar (T-36)
+      #POST /api/residentes/{id}/turnos/                      # crear  (T-35)
+     path('residentes/<int:pk>/turnos/',
+          TurnoMedicoListCreateView.as_view(),
+          name='turno-list-create'),
+
+    
+    
 ]
