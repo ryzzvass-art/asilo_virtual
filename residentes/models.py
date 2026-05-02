@@ -1,7 +1,4 @@
-# ============================================================
-# SPRINT 2 — T-17, T-18, T-19
-# Archivo: residentes/models.py  (reemplaza todo el archivo)
-# ============================================================
+
 
 from django.db import models
 from django.conf import settings

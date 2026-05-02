@@ -1,10 +1,4 @@
-# ============================================================
-# T-19 — Django Signal: crear HistorialMedico automáticamente
-# Archivo NUEVO: residentes/signals.py
-# ============================================================
-# Un Signal es un "evento" que Django dispara automáticamente.
-# post_save se dispara DESPUÉS de que un objeto se guarda en la BD.
-# ============================================================
+
 
 from django.db.models.signals import post_save
 from django.dispatch import receiver
@@ -26,15 +20,3 @@ def crear_historial_medico(sender, instance, created, **kwargs):
         HistorialMedico.objects.create(residente=instance)
 
 
-# ============================================================
-# IMPORTANTE: Registrar el signal en residentes/apps.py
-# ============================================================
-# Para que Django cargue este archivo de signals, debes agregar
-# esto en residentes/apps.py:
-#
-# class ResidentesConfig(AppConfig):
-#     default_auto_field = 'django.db.models.BigAutoField'
-#     name = 'residentes'
-#
-#     def ready(self):
-#         import residentes.signals   # ← Esta línea activa los signals

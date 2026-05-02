@@ -61,7 +61,7 @@ INSTALLED_APPS = [
     #Apps del Proyecto
     'usuarios',
     'residentes.apps.ResidentesConfig', 
-    'medicamentos',
+    'medicamentos.apps.MedicamentosConfig',
     'nutricion',
     'actividades',
     'auditoria',

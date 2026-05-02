@@ -1,7 +1,4 @@
-# ============================================================
-# SPRINT 2 — Serializers
-# Archivo NUEVO: residentes/serializers.py
-# ============================================================
+
 
 from rest_framework import serializers
 from .models import Residente, HistorialMedico, ContactoEmergencia
