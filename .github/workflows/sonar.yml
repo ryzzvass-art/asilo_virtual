@@ -1,0 +1,25 @@
+name: SonarCloud Analysis
+on:
+  push:
+    branches:
+      - main
+      - dev  # <--- Agrega tu rama de desarrollo aquí
+  pull_request:
+    branches:
+      - main
+      - dev  # <--- También para que revise cuando quieras unir ramas
+    types: [opened, synchronize, reopened]
+jobs:
+  sonarcloud:
+    name: SonarCloud
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Necesario para que Sonar analice el historial de cambios
+      
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Lo genera GitHub solo
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}    # El que guardaste en Settings
