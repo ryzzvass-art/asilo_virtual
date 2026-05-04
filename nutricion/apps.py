@@ -1,6 +1,3 @@
-# ============================================================
-# Archivo: nutricion/apps.py (reemplaza el existente)
-# ============================================================
 
 from django.apps import AppConfig
 
