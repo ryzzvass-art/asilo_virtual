@@ -63,7 +63,7 @@ INSTALLED_APPS = [
     'usuarios',
     'residentes.apps.ResidentesConfig', 
     'medicamentos.apps.MedicamentosConfig',
-    'nutricion',
+    'nutricion.apps.NutricionConfig',
     'actividades',
     'auditoria',
     'visitas',

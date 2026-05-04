@@ -1,3 +1,153 @@
-from django.db import models
 
-# Create your models here.
+from django.db import models
+from django.conf import settings
+
+
+class CatalogoRestriccion(models.Model):
+    """
+    Catálogo de restricciones alimentarias.
+    Solo el Administrador lo gestiona.
+    severidad='obligatorio' bloquea con confirmación explícita.
+    severidad='recomendado' genera advertencia.
+    """
+
+    class Severidad(models.TextChoices):
+        OBLIGATORIO = "obligatorio", "Obligatorio"
+        RECOMENDADO = "recomendado", "Recomendado"
+
+    class Estado(models.TextChoices):
+        ACTIVO    = "activo",    "Activo"
+        ARCHIVADO = "archivado", "Archivado"
+
+    nombre               = models.CharField(max_length=150)   # sin azúcar, bajo en sodio, etc.
+    descripcion          = models.TextField(blank=True, default='')
+    condiciones_asociadas = models.CharField(max_length=255, blank=True, default='')  # Diabetes, Hipertensión, etc.
+    severidad            = models.CharField(max_length=20, choices=Severidad.choices)
+    estado               = models.CharField(
+        max_length=20,
+        choices=Estado.choices,
+        default=Estado.ACTIVO
+    )
+    creado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name='restricciones_creadas'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'catalogo_restricciones'
+        indexes = [
+            models.Index(fields=['estado'],    name='idx_restricciones_estado'),
+            models.Index(fields=['severidad'], name='idx_restricciones_severidad'),
+        ]
+
+    def __str__(self):
+        return f"{self.nombre} ({self.severidad})"
+
+
+class CatalogoAlimento(models.Model):
+    """
+    Catálogo de alimentos disponibles para los menús.
+    Nuevo alimento inicia con estado='pendiente'.
+    Solo activos aparecen en los menús.
+    Solo el Admin puede activar un alimento (revisado_por).
+    """
+
+    class Estado(models.TextChoices):
+        PENDIENTE = "pendiente", "Pendiente de revisión"
+        ACTIVO    = "activo",    "Activo"
+        ARCHIVADO = "archivado", "Archivado"
+
+    nombre           = models.CharField(max_length=200)
+    grupo_alimentario = models.CharField(max_length=100)  # cereal, proteína, lácteo, vegetal, postre, etc.
+    estado           = models.CharField(
+        max_length=20,
+        choices=Estado.choices,
+        default=Estado.PENDIENTE   # Siempre inicia pendiente
+    )
+    # null=True porque al crear aún no tiene revisor
+    revisado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='alimentos_revisados'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'catalogo_alimentos'
+        indexes = [
+            models.Index(fields=['estado'], name='idx_alimentos_estado'),
+        ]
+
+    def __str__(self):
+        return f"{self.nombre} ({self.grupo_alimentario})"
+
+
+class AlimentoRestriccion(models.Model):
+    """
+    Tabla N:M — qué restricciones viola cada alimento.
+    Corazón de la verificación RF-25.
+    PK compuesta (alimento_id, restriccion_id). Sin campos adicionales.
+    """
+    alimento   = models.ForeignKey(
+        CatalogoAlimento,
+        on_delete=models.CASCADE,
+        related_name='restricciones_que_viola'
+    )
+    restriccion = models.ForeignKey(
+        CatalogoRestriccion,
+        on_delete=models.CASCADE,
+        related_name='alimentos_afectados'
+    )
+
+    class Meta:
+        db_table = 'alimento_restricciones'
+        unique_together = [('alimento', 'restriccion')]   # PK compuesta
+
+    def __str__(self):
+        return f"{self.alimento} viola → {self.restriccion}"
+
+
+class ResidenteRestriccion(models.Model):
+    """
+    Restricciones activas de cada residente.
+    NINGUNA se activa sin confirmación humana explícita (RF-22-C).
+    confirmado_por no puede ser null.
+    """
+
+    class Estado(models.TextChoices):
+        ACTIVA   = "activa",   "Activa"
+        REVOCADA = "revocada", "Revocada"
+
+    residente   = models.ForeignKey(
+        'residentes.Residente',
+        on_delete=models.CASCADE,
+        related_name='restricciones_alimentarias'
+    )
+    restriccion = models.ForeignKey(
+        CatalogoRestriccion,
+        on_delete=models.CASCADE,
+        related_name='residentes_con_restriccion'
+    )
+    # confirmado_por nunca puede ser null — regla de negocio RF-22-C
+    confirmado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name='restricciones_confirmadas'
+    )
+    fecha_activacion = models.DateTimeField(auto_now_add=True)
+    estado           = models.CharField(
+        max_length=20,
+        choices=Estado.choices,
+        default=Estado.ACTIVA
+    )
+
+    class Meta:
+        db_table = 'residente_restricciones'
+        unique_together = [('residente', 'restriccion')]   # Una restricción por residente
+
+    def __str__(self):
+        return f"{self.residente} — {self.restriccion} ({self.estado})"
