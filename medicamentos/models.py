@@ -3,6 +3,7 @@
 
 from django.db import models
 from django.conf import settings
+import json
 
 
 class CatalogoMedicamento(models.Model):
@@ -75,3 +76,80 @@ class StockMedicamento(models.Model):
 
     def __str__(self):
         return f"Lote {self.lote} — {self.medicamento} ({self.cantidad} {self.unidad})"
+    
+
+class ResidenteMedicamento(models.Model):
+    """
+    Prescripción de un medicamento a un residente.
+    Tabla pivote entre residentes y catalogo_medicamentos.
+    Los horarios se guardan como JSON: ["08:00","14:00","20:00"]
+    """
+ 
+    class Estado(models.TextChoices):
+        ACTIVO     = "activo",     "Activo"
+        FINALIZADO = "finalizado", "Finalizado"
+ 
+    residente = models.ForeignKey(
+        'residentes.Residente',
+        on_delete=models.CASCADE,
+        related_name='medicamentos_prescritos'
+    )
+    medicamento = models.ForeignKey(
+        CatalogoMedicamento,
+        on_delete=models.PROTECT,
+        related_name='prescripciones'
+    )
+    prescrito_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name='prescripciones_realizadas'
+    )
+    dosis              = models.CharField(max_length=100)   # "500mg", "10ml", etc.
+    via_administracion = models.CharField(max_length=50)    # oral, inyectable, tópica, etc.
+    # JSONField guarda el array de horas como JSON en la BD
+    horarios           = models.JSONField(default=list)     # ["08:00","14:00","20:00"]
+    fecha_inicio       = models.DateField()
+    fecha_fin          = models.DateField(null=True, blank=True)  # null = tratamiento indefinido
+    estado             = models.CharField(
+        max_length=20,
+        choices=Estado.choices,
+        default=Estado.ACTIVO,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+ 
+    class Meta:
+        db_table = 'residente_medicamentos'
+ 
+    def __str__(self):
+        return f"{self.medicamento.nombre_comercial} → {self.residente} ({self.estado})"
+ 
+ 
+class AdministracionMedicamento(models.Model):
+    """
+    Registro de cada evento de toma — sea administrado o no.
+    Una fila por turno programado.
+    Fuente del historial RF-13 y detección de omisiones RF-28.
+    """
+ 
+    residente_medicamento = models.ForeignKey(
+        ResidenteMedicamento,
+        on_delete=models.CASCADE,
+        related_name='administraciones'
+    )
+    realizado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name='administraciones_realizadas'
+    )
+    administrado           = models.BooleanField()           # True=administrado, False=omitido
+    fecha_hora_programada  = models.DateTimeField()          # Cuándo debía administrarse
+    fecha_hora_real        = models.DateTimeField(null=True, blank=True)  # Cuándo se administró
+    observacion            = models.TextField(blank=True, default='')    # Motivo si omitido
+ 
+    class Meta:
+        db_table = 'administraciones_medicamento'
+        ordering = ['-fecha_hora_programada']
+ 
+    def __str__(self):
+        estado = "✓" if self.administrado else "✗"
+        return f"{estado} {self.residente_medicamento} — {self.fecha_hora_programada:%Y-%m-%d %H:%M}"

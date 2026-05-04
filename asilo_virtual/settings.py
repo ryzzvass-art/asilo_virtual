@@ -50,6 +50,7 @@ DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL')
 # Application definition
 
 INSTALLED_APPS = [
+    'daphne' ,#Servidor ASGI para Channels (WebSockets)
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -138,7 +139,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'America/La_Paz'
 
 USE_I18N = True
 
@@ -181,3 +182,10 @@ SIMPLE_JWT = {
     'USER_ID_FIELD': 'id',
     'USER_ID_CLAIM': 'user_id',
 }
+
+ASGI_APPLICATION = 'asilo_virtual.asgi.application'
+CHANNEL_LAYERS = {
+       "default": {
+           "BACKEND": "channels.layers.InMemoryChannelLayer"
+       }
+   }
