@@ -1,7 +1,5 @@
 from rest_framework import serializers
 from usuarios.models import Usuario
-from rest_framework_simplejwt.tokens import RefreshToken
-import uuid
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.utils import timezone
 

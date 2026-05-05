@@ -1,14 +1,12 @@
+import uuid # resete token
+from datetime import timedelta
+from django.utils import timezone
 from django.db import models
 from django.contrib.auth.models import (
     AbstractBaseUser,
     BaseUserManager,
     PermissionsMixin,
 )
-
-# resete token
-import uuid
-from django.utils import timezone
-from datetime import timedelta
 
 # ── MANAGER ──────────────────────────────────────────────────────────────────
 # El Manager es el que sabe cómo CREAR usuarios.

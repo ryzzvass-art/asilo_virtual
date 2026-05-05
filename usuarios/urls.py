@@ -1,10 +1,10 @@
 from rest_framework.routers import DefaultRouter
 from django.urls import path
-from usuarios.views import UsuarioViewSet, LoginView
+from usuarios.views import UsuarioViewSet
 from .views import SolicitarPasswordResetView
 from .views import ConfirmarPasswordResetView
 from .views import UsuarioEstadoView
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from rest_framework_simplejwt.views import  TokenRefreshView
 from .views import CustomTokenObtainPairView
 
 router = DefaultRouter()
