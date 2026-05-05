@@ -6,16 +6,16 @@ from django.db import migrations
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('usuarios', '0002_passwordresettoken'),
+        ("usuarios", "0002_passwordresettoken"),
     ]
 
     operations = [
         migrations.RemoveField(
-            model_name='usuario',
-            name='is_superuser',
+            model_name="usuario",
+            name="is_superuser",
         ),
         migrations.RemoveField(
-            model_name='usuario',
-            name='last_login',
+            model_name="usuario",
+            name="last_login",
         ),
     ]

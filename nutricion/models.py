@@ -1,4 +1,3 @@
-
 from django.db import models
 from django.conf import settings
 
@@ -16,30 +15,30 @@ class CatalogoRestriccion(models.Model):
         RECOMENDADO = "recomendado", "Recomendado"
 
     class Estado(models.TextChoices):
-        ACTIVO    = "activo",    "Activo"
+        ACTIVO = "activo", "Activo"
         ARCHIVADO = "archivado", "Archivado"
 
-    nombre               = models.CharField(max_length=150)   # sin azúcar, bajo en sodio, etc.
-    descripcion          = models.TextField(blank=True, default='')
-    condiciones_asociadas = models.CharField(max_length=255, blank=True, default='')  # Diabetes, Hipertensión, etc.
-    severidad            = models.CharField(max_length=20, choices=Severidad.choices)
-    estado               = models.CharField(
-        max_length=20,
-        choices=Estado.choices,
-        default=Estado.ACTIVO
+    nombre = models.CharField(max_length=150)  # sin azúcar, bajo en sodio, etc.
+    descripcion = models.TextField(blank=True, default="")
+    condiciones_asociadas = models.CharField(
+        max_length=255, blank=True, default=""
+    )  # Diabetes, Hipertensión, etc.
+    severidad = models.CharField(max_length=20, choices=Severidad.choices)
+    estado = models.CharField(
+        max_length=20, choices=Estado.choices, default=Estado.ACTIVO
     )
     creado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
-        related_name='restricciones_creadas'
+        related_name="restricciones_creadas",
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        db_table = 'catalogo_restricciones'
+        db_table = "catalogo_restricciones"
         indexes = [
-            models.Index(fields=['estado'],    name='idx_restricciones_estado'),
-            models.Index(fields=['severidad'], name='idx_restricciones_severidad'),
+            models.Index(fields=["estado"], name="idx_restricciones_estado"),
+            models.Index(fields=["severidad"], name="idx_restricciones_severidad"),
         ]
 
     def __str__(self):
@@ -56,15 +55,17 @@ class CatalogoAlimento(models.Model):
 
     class Estado(models.TextChoices):
         PENDIENTE = "pendiente", "Pendiente de revisión"
-        ACTIVO    = "activo",    "Activo"
+        ACTIVO = "activo", "Activo"
         ARCHIVADO = "archivado", "Archivado"
 
-    nombre           = models.CharField(max_length=200)
-    grupo_alimentario = models.CharField(max_length=100)  # cereal, proteína, lácteo, vegetal, postre, etc.
-    estado           = models.CharField(
+    nombre = models.CharField(max_length=200)
+    grupo_alimentario = models.CharField(
+        max_length=100
+    )  # cereal, proteína, lácteo, vegetal, postre, etc.
+    estado = models.CharField(
         max_length=20,
         choices=Estado.choices,
-        default=Estado.PENDIENTE   # Siempre inicia pendiente
+        default=Estado.PENDIENTE,  # Siempre inicia pendiente
     )
     # null=True porque al crear aún no tiene revisor
     revisado_por = models.ForeignKey(
@@ -72,14 +73,14 @@ class CatalogoAlimento(models.Model):
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='alimentos_revisados'
+        related_name="alimentos_revisados",
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        db_table = 'catalogo_alimentos'
+        db_table = "catalogo_alimentos"
         indexes = [
-            models.Index(fields=['estado'], name='idx_alimentos_estado'),
+            models.Index(fields=["estado"], name="idx_alimentos_estado"),
         ]
 
     def __str__(self):
@@ -92,20 +93,21 @@ class AlimentoRestriccion(models.Model):
     Corazón de la verificación RF-25.
     PK compuesta (alimento_id, restriccion_id). Sin campos adicionales.
     """
-    alimento   = models.ForeignKey(
+
+    alimento = models.ForeignKey(
         CatalogoAlimento,
         on_delete=models.CASCADE,
-        related_name='restricciones_que_viola'
+        related_name="restricciones_que_viola",
     )
     restriccion = models.ForeignKey(
         CatalogoRestriccion,
         on_delete=models.CASCADE,
-        related_name='alimentos_afectados'
+        related_name="alimentos_afectados",
     )
 
     class Meta:
-        db_table = 'alimento_restricciones'
-        unique_together = [('alimento', 'restriccion')]   # PK compuesta
+        db_table = "alimento_restricciones"
+        unique_together = [("alimento", "restriccion")]  # PK compuesta
 
     def __str__(self):
         return f"{self.alimento} viola → {self.restriccion}"
@@ -119,35 +121,35 @@ class ResidenteRestriccion(models.Model):
     """
 
     class Estado(models.TextChoices):
-        ACTIVA   = "activa",   "Activa"
+        ACTIVA = "activa", "Activa"
         REVOCADA = "revocada", "Revocada"
 
-    residente   = models.ForeignKey(
-        'residentes.Residente',
+    residente = models.ForeignKey(
+        "residentes.Residente",
         on_delete=models.CASCADE,
-        related_name='restricciones_alimentarias'
+        related_name="restricciones_alimentarias",
     )
     restriccion = models.ForeignKey(
         CatalogoRestriccion,
         on_delete=models.CASCADE,
-        related_name='residentes_con_restriccion'
+        related_name="residentes_con_restriccion",
     )
     # confirmado_por nunca puede ser null — regla de negocio RF-22-C
     confirmado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
-        related_name='restricciones_confirmadas'
+        related_name="restricciones_confirmadas",
     )
     fecha_activacion = models.DateTimeField(auto_now_add=True)
-    estado           = models.CharField(
-        max_length=20,
-        choices=Estado.choices,
-        default=Estado.ACTIVA
+    estado = models.CharField(
+        max_length=20, choices=Estado.choices, default=Estado.ACTIVA
     )
 
     class Meta:
-        db_table = 'residente_restricciones'
-        unique_together = [('residente', 'restriccion')]   # Una restricción por residente
+        db_table = "residente_restricciones"
+        unique_together = [
+            ("residente", "restriccion")
+        ]  # Una restricción por residente
 
     def __str__(self):
         return f"{self.residente} — {self.restriccion} ({self.estado})"

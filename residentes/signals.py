@@ -1,5 +1,3 @@
-
-
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from .models import Residente, HistorialMedico
@@ -18,5 +16,3 @@ def crear_historial_medico(sender, instance, created, **kwargs):
         # Solo crea el historial cuando el residente es NUEVO
         # Si es una edición (created=False), no hace nada
         HistorialMedico.objects.create(residente=instance)
-
-

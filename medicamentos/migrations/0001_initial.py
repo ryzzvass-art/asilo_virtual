@@ -15,45 +15,91 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.CreateModel(
-            name='CatalogoMedicamento',
+            name="CatalogoMedicamento",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('nombre_comercial', models.CharField(max_length=200)),
-                ('principio_activo', models.CharField(max_length=200)),
-                ('tipo', models.CharField(max_length=100)),
-                ('forma_farmaceutica', models.CharField(max_length=100)),
-                ('contraindicaciones', models.TextField(blank=True, default='')),
-                ('estado', models.CharField(choices=[('activo', 'Activo'), ('archivado', 'Archivado')], default='activo', max_length=20)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('creado_por', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='medicamentos_creados', to=settings.AUTH_USER_MODEL)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("nombre_comercial", models.CharField(max_length=200)),
+                ("principio_activo", models.CharField(max_length=200)),
+                ("tipo", models.CharField(max_length=100)),
+                ("forma_farmaceutica", models.CharField(max_length=100)),
+                ("contraindicaciones", models.TextField(blank=True, default="")),
+                (
+                    "estado",
+                    models.CharField(
+                        choices=[("activo", "Activo"), ("archivado", "Archivado")],
+                        default="activo",
+                        max_length=20,
+                    ),
+                ),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                (
+                    "creado_por",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="medicamentos_creados",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
             ],
             options={
-                'db_table': 'catalogo_medicamentos',
+                "db_table": "catalogo_medicamentos",
             },
         ),
         migrations.CreateModel(
-            name='StockMedicamento',
+            name="StockMedicamento",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('cantidad', models.IntegerField()),
-                ('unidad', models.CharField(max_length=50)),
-                ('fecha_vencimiento', models.DateField()),
-                ('umbral_minimo', models.IntegerField(default=10)),
-                ('lote', models.CharField(max_length=100)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('actualizado_por', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='stocks_actualizados', to=settings.AUTH_USER_MODEL)),
-                ('medicamento', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='lotes', to='medicamentos.catalogomedicamento')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("cantidad", models.IntegerField()),
+                ("unidad", models.CharField(max_length=50)),
+                ("fecha_vencimiento", models.DateField()),
+                ("umbral_minimo", models.IntegerField(default=10)),
+                ("lote", models.CharField(max_length=100)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                (
+                    "actualizado_por",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="stocks_actualizados",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
+                (
+                    "medicamento",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="lotes",
+                        to="medicamentos.catalogomedicamento",
+                    ),
+                ),
             ],
             options={
-                'db_table': 'stock_medicamentos',
+                "db_table": "stock_medicamentos",
             },
         ),
         migrations.AddIndex(
-            model_name='catalogomedicamento',
-            index=models.Index(fields=['estado'], name='idx_medicamentos_estado'),
+            model_name="catalogomedicamento",
+            index=models.Index(fields=["estado"], name="idx_medicamentos_estado"),
         ),
         migrations.AddIndex(
-            model_name='catalogomedicamento',
-            index=models.Index(fields=['nombre_comercial'], name='idx_medicamentos_nombre'),
+            model_name="catalogomedicamento",
+            index=models.Index(
+                fields=["nombre_comercial"], name="idx_medicamentos_nombre"
+            ),
         ),
     ]

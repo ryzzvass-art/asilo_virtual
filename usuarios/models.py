@@ -1,6 +1,11 @@
 from django.db import models
-from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
-#resete token
+from django.contrib.auth.models import (
+    AbstractBaseUser,
+    BaseUserManager,
+    PermissionsMixin,
+)
+
+# resete token
 import uuid
 from django.utils import timezone
 from datetime import timedelta
@@ -9,16 +14,17 @@ from datetime import timedelta
 # El Manager es el que sabe cómo CREAR usuarios.
 # Django lo necesita cuando usás AbstractBaseUser.
 
+
 class UsuarioManager(BaseUserManager):
 
     def create_user(self, email, nombre, apellido, rol, password=None):
         # Validar que el email no esté vacío
         if not email:
             raise ValueError("El email es obligatorio.")
-        
+
         # Normalizar el email (convierte mayúsculas a minúsculas)
         email = self.normalize_email(email)
-        
+
         # Crear la instancia del usuario con los datos
         usuario = self.model(
             email=email,
@@ -26,10 +32,10 @@ class UsuarioManager(BaseUserManager):
             apellido=apellido,
             rol=rol,
         )
-        
+
         # Guardar la contraseña encriptada (nunca en texto plano)
         usuario.set_password(password)
-        
+
         # Guardar en la base de datos
         usuario.save(using=self._db)
         return usuario
@@ -47,6 +53,7 @@ class UsuarioManager(BaseUserManager):
 
 # ── MODELO USUARIO ────────────────────────────────────────────────────────────
 
+
 class Usuario(AbstractBaseUser, PermissionsMixin):
     """
     Usuario del sistema. Reemplaza al User de Django por defecto.
@@ -57,49 +64,49 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
     # Opciones de rol — TextChoices crea las opciones válidas
     class Rol(models.TextChoices):
         ADMINISTRADOR = "administrador", "Administrador"
-        CUIDADOR      = "cuidador",      "Cuidador"
+        CUIDADOR = "cuidador", "Cuidador"
 
     # Opciones de estado
     class Estado(models.TextChoices):
-        ACTIVO   = "activo",   "Activo"
+        ACTIVO = "activo", "Activo"
         INACTIVO = "inactivo", "Inactivo"
 
     # ─── Eliminar campos automáticos de Django que no usamos ───
 
-    last_login = None       # AbstractBaseUser lo agrega por defecto
-    is_superuser = None     # PermissionsMixin lo agrega por defecto
+    last_login = None  # AbstractBaseUser lo agrega por defecto
+    is_superuser = None  # PermissionsMixin lo agrega por defecto
 
     # ── CAMPOS DE LA TABLA ────────────────────────────────────────────────────
-    nombre       = models.CharField(max_length=100)
-    apellido     = models.CharField(max_length=100)
-    
+    nombre = models.CharField(max_length=100)
+    apellido = models.CharField(max_length=100)
+
     # unique=True significa que no puede haber dos usuarios con el mismo email
-    email        = models.EmailField(unique=True)
-    
-    rol          = models.CharField(
+    email = models.EmailField(unique=True)
+
+    rol = models.CharField(
         max_length=20,
         choices=Rol.choices,
     )
-    estado       = models.CharField(
+    estado = models.CharField(
         max_length=20,
         choices=Estado.choices,
-        default=Estado.ACTIVO,       # Por defecto todo usuario empieza activo
+        default=Estado.ACTIVO,  # Por defecto todo usuario empieza activo
     )
-    
+
     # null=True significa que puede estar vacío en la BD
     # blank=True significa que el formulario no lo requiere
     ultimo_login = models.DateTimeField(null=True, blank=True)
-    
+
     # auto_now_add=True guarda automáticamente la fecha de creación
-    created_at   = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(auto_now_add=True)
 
     # Campos requeridos por Django internamente
-    is_active  = models.BooleanField(default=True)
-    is_staff   = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
+    is_staff = models.BooleanField(default=False)
 
     # Le decimos a Django que use email en lugar de username para login
-    USERNAME_FIELD  = "email"
-    
+    USERNAME_FIELD = "email"
+
     # Campos obligatorios al crear superusuario por terminal
     REQUIRED_FIELDS = ["nombre", "apellido", "rol"]
 
@@ -108,10 +115,10 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
 
     # ── CONFIGURACIÓN DE LA TABLA ─────────────────────────────────────────────
     class Meta:
-        db_table = "usuarios"   # Nombre exacto de la tabla en PostgreSQL
+        db_table = "usuarios"  # Nombre exacto de la tabla en PostgreSQL
         indexes = [
             # Índices para acelerar búsquedas frecuentes
-            models.Index(fields=["rol"],    name="idx_usuarios_rol"),
+            models.Index(fields=["rol"], name="idx_usuarios_rol"),
             models.Index(fields=["estado"], name="idx_usuarios_estado"),
         ]
 
@@ -126,7 +133,8 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
 
     @property
     def es_cuidador(self):
-        return self.rol == self.Rol.CUIDADOR      
+        return self.rol == self.Rol.CUIDADOR
+
 
 class PasswordResetToken(models.Model):
     """
@@ -136,33 +144,33 @@ class PasswordResetToken(models.Model):
     - Una vez usado, no puede reutilizarse (campo 'usado')
     - Al pedir nuevo token, los anteriores del usuario se invalidan (ver T-13)
     """
- 
+
     usuario = models.ForeignKey(
-        'Usuario',                      # FK → usuarios.id
-        on_delete=models.CASCADE,       # Si se borra el usuario, se borran sus tokens
-        related_name='reset_tokens'
+        "Usuario",  # FK → usuarios.id
+        on_delete=models.CASCADE,  # Si se borra el usuario, se borran sus tokens
+        related_name="reset_tokens",
     )
     token = models.UUIDField(
-        default=uuid.uuid4,             # Genera UUID aleatorio automáticamente
-        unique=True,                    # No puede repetirse en toda la tabla
-        editable=False
+        default=uuid.uuid4,  # Genera UUID aleatorio automáticamente
+        unique=True,  # No puede repetirse en toda la tabla
+        editable=False,
     )
     expira_en = models.DateTimeField()  # Se calcula en save(): created_at + 1 hora
     usado = models.BooleanField(
-        default=False                   # True = ya fue utilizado, no se puede reusar
+        default=False  # True = ya fue utilizado, no se puede reusar
     )
- 
+
     class Meta:
-        db_table = 'password_reset_tokens'
-        verbose_name = 'Token de recuperación'
-        verbose_name_plural = 'Tokens de recuperación'
- 
+        db_table = "password_reset_tokens"
+        verbose_name = "Token de recuperación"
+        verbose_name_plural = "Tokens de recuperación"
+
     def save(self, *args, **kwargs):
         # Si es un token nuevo (sin pk), calcular expiración = ahora + 1 hora
         if not self.pk:
             self.expira_en = timezone.now() + timedelta(hours=1)
         super().save(*args, **kwargs)
- 
+
     def is_valid(self):
         """
         Retorna True si el token es usable:
@@ -170,6 +178,6 @@ class PasswordResetToken(models.Model):
         - No expiró (expira_en > ahora)
         """
         return not self.usado and self.expira_en > timezone.now()
- 
+
     def __str__(self):
         return f"Token de {self.usuario.email} — {'usado' if self.usado else 'activo'}"

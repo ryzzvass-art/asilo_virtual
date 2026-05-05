@@ -8,39 +8,93 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('residentes', '0001_initial'),
+        ("residentes", "0001_initial"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='ObservacionDiaria',
+            name="ObservacionDiaria",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('estado_fisico', models.TextField()),
-                ('estado_emocional', models.TextField()),
-                ('fecha_hora', models.DateTimeField(auto_now_add=True)),
-                ('registrado_por', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='observaciones_registradas', to=settings.AUTH_USER_MODEL)),
-                ('residente', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='observaciones', to='residentes.residente')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("estado_fisico", models.TextField()),
+                ("estado_emocional", models.TextField()),
+                ("fecha_hora", models.DateTimeField(auto_now_add=True)),
+                (
+                    "registrado_por",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="observaciones_registradas",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
+                (
+                    "residente",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="observaciones",
+                        to="residentes.residente",
+                    ),
+                ),
             ],
             options={
-                'db_table': 'observaciones_diarias',
-                'ordering': ['-fecha_hora'],
+                "db_table": "observaciones_diarias",
+                "ordering": ["-fecha_hora"],
             },
         ),
         migrations.CreateModel(
-            name='TurnoMedico',
+            name="TurnoMedico",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('tipo_consulta', models.CharField(choices=[('control_rutinario', 'Control rutinario'), ('urgencia', 'Urgencia'), ('seguimiento', 'Seguimiento')], max_length=20)),
-                ('observaciones', models.TextField()),
-                ('fecha_hora', models.DateTimeField()),
-                ('registrado_por', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='turnos_registrados', to=settings.AUTH_USER_MODEL)),
-                ('residente', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='turnos_medicos', to='residentes.residente')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "tipo_consulta",
+                    models.CharField(
+                        choices=[
+                            ("control_rutinario", "Control rutinario"),
+                            ("urgencia", "Urgencia"),
+                            ("seguimiento", "Seguimiento"),
+                        ],
+                        max_length=20,
+                    ),
+                ),
+                ("observaciones", models.TextField()),
+                ("fecha_hora", models.DateTimeField()),
+                (
+                    "registrado_por",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="turnos_registrados",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
+                (
+                    "residente",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="turnos_medicos",
+                        to="residentes.residente",
+                    ),
+                ),
             ],
             options={
-                'db_table': 'turnos_medicos',
-                'ordering': ['-fecha_hora'],
+                "db_table": "turnos_medicos",
+                "ordering": ["-fecha_hora"],
             },
         ),
     ]

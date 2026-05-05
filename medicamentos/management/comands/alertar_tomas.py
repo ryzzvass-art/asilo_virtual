@@ -5,6 +5,7 @@ Ejecutar manualmente:
 Para producción, configurar un cron job que lo ejecute cada minuto:
     * * * * * cd /ruta/proyecto && python manage.py alertar_tomas
 """
+
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 from datetime import timedelta
@@ -18,8 +19,8 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         from medicamentos.models import ResidenteMedicamento
 
-        ahora         = timezone.now()
-        limite        = ahora + timedelta(minutes=30)
+        ahora = timezone.now()
+        limite = ahora + timedelta(minutes=30)
         channel_layer = get_channel_layer()
 
         prescripciones = ResidenteMedicamento.objects.filter(
@@ -39,15 +40,13 @@ class Command(BaseCommand):
                     async_to_sync(channel_layer.group_send)(
                         "notificaciones",
                         {
-                            "type":        "toma_proxima",
-                            "residente":   f"{p.residente.nombre} {p.residente.apellido}",
+                            "type": "toma_proxima",
+                            "residente": f"{p.residente.nombre} {p.residente.apellido}",
                             "medicamento": p.medicamento.nombre_comercial,
-                            "dosis":       p.dosis,
-                            "hora":        horario,
-                        }
+                            "dosis": p.dosis,
+                            "hora": horario,
+                        },
                     )
                     alertas_enviadas += 1
 
-        self.stdout.write(
-            self.style.SUCCESS(f"✓ {alertas_enviadas} alertas enviadas")
-        )
+        self.stdout.write(self.style.SUCCESS(f"✓ {alertas_enviadas} alertas enviadas"))
