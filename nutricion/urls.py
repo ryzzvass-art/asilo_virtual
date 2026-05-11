@@ -63,16 +63,18 @@ urlpatterns = [
     ),
     # GET  /api/residentes/{id}/planes/  → listar todos (T-75)
     # POST /api/residentes/{id}/planes/  → crear con versionado (T-69)
-     path('residentes/<int:pk>/planes/',
-          PlanListCreateView.as_view(),
-          name='plan-list-create'),
-     # GET /api/planes/{id}/  → detalle con comidas (T-76)
-     path('planes/<int:plan_id>/',
-          PlanDetailView.as_view(),
-          name='plan-detail'),
+    path(
+        "residentes/<int:pk>/planes/",
+        PlanListCreateView.as_view(),
+        name="plan-list-create",
+    ),
+    # GET /api/planes/{id}/  → detalle con comidas (T-76)
+    path("planes/<int:plan_id>/", PlanDetailView.as_view(), name="plan-detail"),
     # GET  /api/planes/{id}/comidas/  → listar con filtros (T-72)
     # POST /api/planes/{id}/comidas/  → registrar con verificación RF-25 (T-74)
-     path('planes/<int:plan_id>/comidas/',
-          ComidaListCreateView.as_view(),
-          name='comida-list-create'),
+    path(
+        "planes/<int:plan_id>/comidas/",
+        ComidaListCreateView.as_view(),
+        name="comida-list-create",
+    ),
 ]

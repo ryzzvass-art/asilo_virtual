@@ -5,7 +5,7 @@ from .models import (
     AlimentoRestriccion,
     ResidenteRestriccion,
     PlanNutricional,
-    ComidaDiaria
+    ComidaDiaria,
 )
 
 # ── T-59, T-60 — Catálogo de Restricciones ────────────────
@@ -183,64 +183,87 @@ class AsignarRestriccionSerializer(serializers.Serializer):
 
         data["restriccion"] = restriccion
         return data
+
+
 # ── T-68, T-69 — Planes Nutricionales ─────────────────────
+
 
 class PlanNutricionalSerializer(serializers.ModelSerializer):
     """
     Para crear y listar planes.
     creado_por y residente se asignan automáticamente en la vista.
     """
+
     creado_por_nombre = serializers.SerializerMethodField()
- 
+
     class Meta:
-        model  = PlanNutricional
+        model = PlanNutricional
         fields = [
-            'id', 'residente', 'tipo_dieta', 'observaciones',
-            'fecha_inicio', 'fecha_fin', 'estado',
-            'creado_por', 'creado_por_nombre', 'created_at',
+            "id",
+            "residente",
+            "tipo_dieta",
+            "observaciones",
+            "fecha_inicio",
+            "fecha_fin",
+            "estado",
+            "creado_por",
+            "creado_por_nombre",
+            "created_at",
         ]
         read_only_fields = [
-            'residente', 'creado_por', 'creado_por_nombre',
-            'estado', 'created_at',
+            "residente",
+            "creado_por",
+            "creado_por_nombre",
+            "estado",
+            "created_at",
         ]
- 
+
     def get_creado_por_nombre(self, obj):
         return f"{obj.creado_por.nombre} {obj.creado_por.apellido}"
- 
- 
+
+
 # ── T-70, T-71, T-72 — Comidas Diarias ────────────────────
- 
+
+
 class ComidaDiariaSerializer(serializers.ModelSerializer):
     """
     Para registrar y listar comidas de un plan.
     Valida que el alimento esté activo antes de guardar.
     La verificación de restricciones se hace en la vista (T-73, T-74).
     """
-    alimento_nombre   = serializers.SerializerMethodField()
+
+    alimento_nombre = serializers.SerializerMethodField()
     registrado_por_nombre = serializers.SerializerMethodField()
- 
+
     class Meta:
-        model  = ComidaDiaria
+        model = ComidaDiaria
         fields = [
-            'id', 'plan', 'fecha', 'tipo_comida',
-            'alimento', 'alimento_nombre',
-            'descripcion_menu',
-            'registrado_por', 'registrado_por_nombre',
+            "id",
+            "plan",
+            "fecha",
+            "tipo_comida",
+            "alimento",
+            "alimento_nombre",
+            "descripcion_menu",
+            "registrado_por",
+            "registrado_por_nombre",
         ]
         read_only_fields = [
-            'plan', 'registrado_por', 'registrado_por_nombre',
-            'alimento_nombre',
+            "plan",
+            "registrado_por",
+            "registrado_por_nombre",
+            "alimento_nombre",
         ]
- 
+
     def get_alimento_nombre(self, obj):
         return obj.alimento.nombre
- 
+
     def get_registrado_por_nombre(self, obj):
         return f"{obj.registrado_por.nombre} {obj.registrado_por.apellido}"
- 
+
     def validate_alimento(self, value):
         """T-71: Alimento archivado o pendiente devuelve 400."""
-        if value.estado != 'activo':
+        if value.estado != "activo":
             raise serializers.ValidationError(
                 f"El alimento '{value.nombre}' no está activo "
                 f"(estado actual: {value.estado}). Solo se pueden asignar alimentos activos."
