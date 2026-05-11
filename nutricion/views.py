@@ -8,6 +8,8 @@ from .models import (
     CatalogoAlimento,
     AlimentoRestriccion,
     ResidenteRestriccion,
+    PlanNutricional,
+    ComidaDiaria
 )
 from .serializers import (
     CatalogoRestriccionSerializer,
@@ -15,12 +17,14 @@ from .serializers import (
     AlimentoRestriccionSerializer,
     ResidenteRestriccionSerializer,
     AsignarRestriccionSerializer,
+    PlanNutricionalSerializer,
+    ComidaDiariaSerializer
 )
 from usuarios.permissions import IsAdministrador, IsAdminOrCuidador
 from residentes.models import Residente
+from django.db import transaction
 
 # ── T-59, T-60 — Catálogo de Restricciones ────────────────
-
 
 class RestriccionListCreateView(APIView):
     """
@@ -358,3 +362,212 @@ class ResidenteRestriccionRevocarView(APIView):
                 "estado": rr.estado,
             }
         )
+    ## ── Función de servicio RF-25 — T-73 ──────────────────────
+def verificar_restricciones(residente_id, alimento_id):
+    """
+    T-73: Verifica si un alimento viola restricciones activas del residente.
+ 
+    Retorna lista vacía si no hay conflictos.
+    Retorna lista con {restriccion, severidad} si hay conflictos.
+ 
+    Esta función se reutiliza en el endpoint de comidas (T-74).
+    """
+    from .models import (
+        AlimentoRestriccion, ResidenteRestriccion,
+        CatalogoAlimento
+    )
+ 
+    # Restricciones activas del residente
+    restricciones_activas = ResidenteRestriccion.objects.filter(
+        residente_id=residente_id,
+        estado='activa'
+    ).values_list('restriccion_id', flat=True)
+ 
+    if not restricciones_activas:
+        return []
+ 
+    # Restricciones que viola el alimento
+    conflictos = AlimentoRestriccion.objects.filter(
+        alimento_id=alimento_id,
+        restriccion_id__in=restricciones_activas
+    ).select_related('restriccion')
+ 
+    return [
+        {
+            'restriccion_id': c.restriccion.pk,
+            'restriccion':    c.restriccion.nombre,
+            'severidad':      c.restriccion.severidad,
+        }
+        for c in conflictos
+    ]
+ 
+ 
+# ── T-68, T-69 — Planes Nutricionales ─────────────────────
+ 
+class PlanListCreateView(APIView):
+    """
+    GET  /api/residentes/{id}/planes/  → listar todos los planes (T-75)
+    POST /api/residentes/{id}/planes/  → crear plan nuevo (T-69)
+    """
+    permission_classes = [IsAdminOrCuidador]
+ 
+    def get(self, request, pk):
+        """T-75: Lista vigente + archivados ordenados por fecha_inicio DESC."""
+        residente = get_object_or_404(Residente, pk=pk)
+        planes    = PlanNutricional.objects.filter(
+            residente=residente
+        ).select_related('creado_por')
+        serializer = PlanNutricionalSerializer(planes, many=True)
+        return Response(serializer.data)
+ 
+    def post(self, request, pk):
+        """
+        T-69: Crear plan nuevo.
+        Archiva automáticamente el plan vigente anterior (transacción atómica).
+        Solo Admin puede crear planes.
+        """
+        if not request.user.es_administrador:
+            return Response(
+                {"error": "Solo el Administrador puede crear planes nutricionales."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+ 
+        residente  = get_object_or_404(Residente, pk=pk)
+        serializer = PlanNutricionalSerializer(data=request.data)
+ 
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+ 
+        # T-69: Transacción atómica — archivar anterior y crear nuevo
+        with transaction.atomic():
+            # Archivar el plan vigente anterior si existe
+            PlanNutricional.objects.filter(
+                residente=residente,
+                estado='vigente'
+            ).update(
+                estado='archivado',
+                fecha_fin=serializer.validated_data['fecha_inicio']
+            )
+ 
+            # Crear el nuevo plan
+            plan = serializer.save(
+                residente=residente,
+                creado_por=request.user,
+                estado='vigente'
+            )
+ 
+        return Response(
+            PlanNutricionalSerializer(plan).data,
+            status=status.HTTP_201_CREATED
+        )
+ 
+ 
+class PlanDetailView(APIView):
+    """
+    GET /api/planes/{id}/  → detalle del plan con sus comidas (T-76)
+    """
+    permission_classes = [IsAdminOrCuidador]
+ 
+    def get(self, request, plan_id):
+        """T-76: Plan específico con sus comidas — accesible aunque esté archivado."""
+        plan       = get_object_or_404(PlanNutricional, pk=plan_id)
+        serializer = PlanNutricionalSerializer(plan)
+        data       = dict(serializer.data)
+ 
+        # Incluir comidas del plan
+        comidas    = ComidaDiaria.objects.filter(
+            plan=plan
+        ).select_related('alimento', 'registrado_por')
+        data['comidas'] = ComidaDiariaSerializer(comidas, many=True).data
+ 
+        return Response(data)
+ 
+ 
+# ── T-70, T-71, T-72, T-73, T-74 — Comidas Diarias ────────
+ 
+class ComidaListCreateView(APIView):
+    """
+    GET  /api/planes/{id}/comidas/  → listar comidas del plan (T-72)
+    POST /api/planes/{id}/comidas/  → registrar comida con verificación RF-25 (T-74)
+    """
+    permission_classes = [IsAdminOrCuidador]
+ 
+    def get(self, request, plan_id):
+        """T-72: Lista con filtros opcionales ?fecha= y ?tipo_comida="""
+        plan     = get_object_or_404(PlanNutricional, pk=plan_id)
+        queryset = ComidaDiaria.objects.filter(
+            plan=plan
+        ).select_related('alimento', 'registrado_por')
+ 
+        # Filtros opcionales
+        fecha      = request.query_params.get('fecha')
+        tipo_comida = request.query_params.get('tipo_comida')
+ 
+        if fecha:
+            queryset = queryset.filter(fecha=fecha)
+        if tipo_comida:
+            tipos_validos = [t[0] for t in ComidaDiaria.TipoComida.choices]
+            if tipo_comida not in tipos_validos:
+                return Response(
+                    {"error": f"tipo_comida inválido. Opciones: {tipos_validos}"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            queryset = queryset.filter(tipo_comida=tipo_comida)
+ 
+        serializer = ComidaDiariaSerializer(queryset, many=True)
+        return Response(serializer.data)
+ 
+    def post(self, request, plan_id):
+        """
+        T-74: Registrar comida con verificación automática de restricciones.
+        - Conflicto 'obligatorio' → bloquea con 400
+        - Conflicto 'recomendado' → guarda con campo 'advertencias'
+        - Sin conflicto → guarda normalmente
+        """
+        plan = get_object_or_404(PlanNutricional, pk=plan_id)
+ 
+        # Solo se pueden agregar comidas al plan vigente
+        if plan.estado == 'archivado':
+            return Response(
+                {"error": "No se pueden agregar comidas a un plan archivado."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+ 
+        serializer = ComidaDiariaSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+ 
+        alimento   = serializer.validated_data['alimento']
+        residente_id = plan.residente_id
+ 
+        # T-73, T-74: Verificar restricciones
+        conflictos = verificar_restricciones(residente_id, alimento.pk)
+ 
+        # Separar por severidad
+        obligatorios = [c for c in conflictos if c['severidad'] == 'obligatorio']
+        recomendados = [c for c in conflictos if c['severidad'] == 'recomendado']
+ 
+        # Conflicto obligatorio → bloquear
+        if obligatorios:
+            return Response(
+                {
+                    "error": "No se puede asignar este alimento. Viola restricciones obligatorias del residente.",
+                    "conflictos": obligatorios,
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+ 
+        # Guardar la comida
+        comida = serializer.save(
+            plan=plan,
+            registrado_por=request.user
+        )
+ 
+        response_data = ComidaDiariaSerializer(comida).data
+ 
+        # Conflicto recomendado → guardar con advertencias
+        if recomendados:
+            response_data = dict(response_data)
+            response_data['advertencias'] = recomendados
+ 
+        return Response(response_data, status=status.HTTP_201_CREATED)

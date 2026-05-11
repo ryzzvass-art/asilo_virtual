@@ -153,3 +153,88 @@ class ResidenteRestriccion(models.Model):
 
     def __str__(self):
         return f"{self.residente} — {self.restriccion} ({self.estado})"
+#SPRINT 7 — T-68, T-70
+class PlanNutricional(models.Model):
+    """
+    Plan nutricional con versionado — solo uno vigente por residente.
+    Al crear plan nuevo, el anterior se archiva automáticamente (RF-26).
+    """
+ 
+    class Estado(models.TextChoices):
+        VIGENTE   = "vigente",   "Vigente"
+        ARCHIVADO = "archivado", "Archivado"
+ 
+    class TipoDieta(models.TextChoices):
+        BLANDA       = "blanda",       "Blanda"
+        HIPOCALORICA = "hipocalorica",  "Hipocalórica"
+        NORMAL       = "normal",        "Normal"
+        DIABETICA    = "diabetica",     "Diabética"
+        HIPOSODICA   = "hiposodica",    "Hiposódica"
+        OTRO         = "otro",          "Otro"
+ 
+    residente  = models.ForeignKey(
+        'residentes.Residente',
+        on_delete=models.CASCADE,
+        related_name='planes_nutricionales'
+    )
+    creado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name='planes_creados'
+    )
+    tipo_dieta   = models.CharField(max_length=20, choices=TipoDieta.choices)
+    observaciones = models.TextField(blank=True, default='')
+    fecha_inicio  = models.DateField()
+    fecha_fin     = models.DateField(null=True, blank=True)  # null = plan vigente
+    estado        = models.CharField(
+        max_length=20,
+        choices=Estado.choices,
+        default=Estado.VIGENTE
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+ 
+    class Meta:
+        db_table = 'planes_nutricionales'
+        ordering = ['-fecha_inicio']
+ 
+    def __str__(self):
+        return f"Plan {self.tipo_dieta} — {self.residente} ({self.estado})"
+ 
+ 
+class ComidaDiaria(models.Model):
+    """
+    Comidas asignadas por día en un plan nutricional.
+    Al guardar se verifica RF-25: alimento vs restricciones activas del residente.
+    """
+ 
+    class TipoComida(models.TextChoices):
+        DESAYUNO  = "desayuno",  "Desayuno"
+        ALMUERZO  = "almuerzo",  "Almuerzo"
+        MERIENDA  = "merienda",  "Merienda"
+        CENA      = "cena",      "Cena"
+ 
+    plan          = models.ForeignKey(
+        PlanNutricional,
+        on_delete=models.CASCADE,
+        related_name='comidas'
+    )
+    registrado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name='comidas_registradas'
+    )
+    fecha          = models.DateField()
+    tipo_comida    = models.CharField(max_length=20, choices=TipoComida.choices)
+    alimento       = models.ForeignKey(
+        CatalogoAlimento,
+        on_delete=models.PROTECT,
+        related_name='en_comidas'
+    )
+    descripcion_menu = models.TextField(blank=True, default='')
+ 
+    class Meta:
+        db_table = 'comidas_diarias'
+        ordering = ['fecha', 'tipo_comida']
+ 
+    def __str__(self):
+        return f"{self.tipo_comida} del {self.fecha} — {self.alimento}"
