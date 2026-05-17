@@ -257,87 +257,82 @@ class AlimentoRestriccionView(APIView):
 
 
 class ResidenteRestriccionView(APIView):
-    """
-    GET  /api/residentes/{id}/restricciones/  → listar restricciones activas
-    POST /api/residentes/{id}/restricciones/  → asignar con confirmación (RF-22-C)
-    """
-
     permission_classes = [IsAdminOrCuidador]
 
     def get(self, request, pk):
         residente = get_object_or_404(Residente, pk=pk)
-        queryset = ResidenteRestriccion.objects.filter(
-            residente=residente, estado="activa"
-        ).select_related("restriccion", "confirmado_por")
+        queryset  = ResidenteRestriccion.objects.filter(
+            residente=residente, estado='activa'
+        ).select_related('restriccion', 'confirmado_por')
         serializer = ResidenteRestriccionSerializer(queryset, many=True)
         return Response(serializer.data)
 
     def post(self, request, pk):
-        """
-        T-66: Sugiere restricciones según condiciones_cronicas del residente.
-        T-67: restricción obligatoria requiere confirmado=True.
-        """
-        residente = get_object_or_404(Residente, pk=pk)
+        residente  = get_object_or_404(Residente, pk=pk)
         serializer = AsignarRestriccionSerializer(data=request.data)
 
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        restriccion = serializer.validated_data["restriccion"]
+        restriccion = serializer.validated_data['restriccion']
 
-        # Verificar que no este ya activa
-        if ResidenteRestriccion.objects.filter(
-            residente=residente, restriccion=restriccion, estado="activa"
-        ).exists():
-            return Response(
-                {
-                    "error": f"La restriccion '{restriccion.nombre}' ya está activa para este residente."
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        # Crear la restriccion confirmada
-        rr = ResidenteRestriccion.objects.create(
+        # Verificar si ya existe (activa o revocada)
+        existente = ResidenteRestriccion.objects.filter(
             residente=residente,
             restriccion=restriccion,
-            confirmado_por=request.user,
-        )
+        ).first()
 
-        # T-66: sugerir otras restricciones basadas en condiciones_cronicas
+        if existente:
+            if existente.estado == 'activa':
+                return Response(
+                    {"error": f"La restricción '{restriccion.nombre}' ya está activa para este residente."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            # Si está revocada → reactivar en lugar de crear nueva
+            existente.estado         = 'activa'
+            existente.confirmado_por = request.user
+            existente.save(update_fields=['estado', 'confirmado_por'])
+            rr = existente
+        else:
+            # Crear nueva
+            rr = ResidenteRestriccion.objects.create(
+                residente=residente,
+                restriccion=restriccion,
+                confirmado_por=request.user,
+            )
+
+        # Sugerencias basadas en condiciones_cronicas
         sugeridas = []
         try:
             condiciones = residente.historial_medico.condiciones_cronicas.lower()
             if condiciones:
-                otras = CatalogoRestriccion.objects.filter(estado="activo").exclude(
-                    pk=restriccion.pk
-                )
-
+                otras = CatalogoRestriccion.objects.filter(
+                    estado='activo'
+                ).exclude(pk=restriccion.pk)
                 for r in otras:
                     palabras = [
-                        p.strip()
-                        for p in r.condiciones_asociadas.lower().split(",")
+                        p.strip() for p in r.condiciones_asociadas.lower().split(',')
                         if len(p.strip()) > 3
                     ]
                     if any(p in condiciones for p in palabras):
-                        # Solo sugerir si no está ya activa
                         ya_activa = ResidenteRestriccion.objects.filter(
-                            residente=residente, restriccion=r, estado="activa"
+                            residente=residente,
+                            restriccion=r,
+                            estado='activa'
                         ).exists()
                         if not ya_activa:
-                            sugeridas.append(
-                                {
-                                    "id": r.pk,
-                                    "nombre": r.nombre,
-                                    "severidad": r.severidad,
-                                }
-                            )
+                            sugeridas.append({
+                                'id':        r.pk,
+                                'nombre':    r.nombre,
+                                'severidad': r.severidad,
+                            })
         except Exception:
             pass
 
         response_data = ResidenteRestriccionSerializer(rr).data
         if sugeridas:
             response_data = dict(response_data)
-            response_data["sugeridas"] = sugeridas
+            response_data['sugeridas'] = sugeridas
 
         return Response(response_data, status=status.HTTP_201_CREATED)
 
