@@ -4,6 +4,7 @@ from rest_framework import status
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from datetime import timedelta
+from auditoria.mixins import AuditLogMixin
 
 # Necesario para el F() en get_alertas_stock
 from django.db import models

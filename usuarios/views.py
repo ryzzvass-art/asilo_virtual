@@ -19,6 +19,7 @@ from .serializers import ConfirmarResetSerializer
 from .serializers import CambiarEstadoUsuarioSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView
 from .serializers import CustomTokenObtainPairSerializer
+from auditoria.mixins import AuditLogMixin, serializar_instancia
 
 
 class UsuarioViewSet(viewsets.ModelViewSet):
@@ -322,17 +323,9 @@ class ConfirmarPasswordResetView(APIView):
         )
 
 
-class UsuarioEstadoView(APIView):
-    """
-    PATCH /api/usuarios/{id}/estado/
-
-    Cambia el estado de un usuario a 'activo' o 'inactivo'.
-
-    Reglas:
-    - Solo el Administrador puede usar este endpoint (403 para Cuidador)
-    - Un usuario no puede cambiar su propio estado
-    - El registro NUNCA se elimina: soft delete
-    """
+class UsuarioEstadoView(AuditLogMixin, APIView):
+    # A1-declarar auditoria
+    audit_entidad = "usuarios"
 
     permission_classes = [IsAdministrador]  # Tu permiso personalizado del T-09
 
@@ -344,7 +337,8 @@ class UsuarioEstadoView(APIView):
             return Response(
                 {"error": "Usuario no encontrado."}, status=status.HTTP_404_NOT_FOUND
             )
-
+        # A2- snapshot
+        antes = serializar_instancia(usuario)
         # Seguridad: un admin no puede desactivarse a sí mismo
         if request.user.pk == usuario.pk:
             return Response(
@@ -361,6 +355,9 @@ class UsuarioEstadoView(APIView):
         # Actualizar solo el campo estado (no toca otros campos)
         usuario.estado = nuevo_estado
         usuario.save(update_fields=["estado"])
+
+        # A3-registrar
+        self.audit_editar(request, antes, usuario)
 
         return Response(
             {

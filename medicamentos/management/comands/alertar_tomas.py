@@ -1,9 +1,5 @@
 """
-Ejecutar manualmente:
-    python manage.py alertar_tomas
-
 Para producción, configurar un cron job que lo ejecute cada minuto:
-    * * * * * cd /ruta/proyecto && python manage.py alertar_tomas
 """
 
 from django.core.management.base import BaseCommand
