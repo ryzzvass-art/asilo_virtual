@@ -261,20 +261,20 @@ class ResidenteRestriccionView(APIView):
 
     def get(self, request, pk):
         residente = get_object_or_404(Residente, pk=pk)
-        queryset  = ResidenteRestriccion.objects.filter(
-            residente=residente, estado='activa'
-        ).select_related('restriccion', 'confirmado_por')
+        queryset = ResidenteRestriccion.objects.filter(
+            residente=residente, estado="activa"
+        ).select_related("restriccion", "confirmado_por")
         serializer = ResidenteRestriccionSerializer(queryset, many=True)
         return Response(serializer.data)
 
     def post(self, request, pk):
-        residente  = get_object_or_404(Residente, pk=pk)
+        residente = get_object_or_404(Residente, pk=pk)
         serializer = AsignarRestriccionSerializer(data=request.data)
 
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        restriccion = serializer.validated_data['restriccion']
+        restriccion = serializer.validated_data["restriccion"]
 
         # Verificar si ya existe (activa o revocada)
         existente = ResidenteRestriccion.objects.filter(
@@ -283,15 +283,17 @@ class ResidenteRestriccionView(APIView):
         ).first()
 
         if existente:
-            if existente.estado == 'activa':
+            if existente.estado == "activa":
                 return Response(
-                    {"error": f"La restricción '{restriccion.nombre}' ya está activa para este residente."},
-                    status=status.HTTP_400_BAD_REQUEST
+                    {
+                        "error": f"La restricción '{restriccion.nombre}' ya está activa para este residente."
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
                 )
             # Si está revocada → reactivar en lugar de crear nueva
-            existente.estado         = 'activa'
+            existente.estado = "activa"
             existente.confirmado_por = request.user
-            existente.save(update_fields=['estado', 'confirmado_por'])
+            existente.save(update_fields=["estado", "confirmado_por"])
             rr = existente
         else:
             # Crear nueva
@@ -306,33 +308,34 @@ class ResidenteRestriccionView(APIView):
         try:
             condiciones = residente.historial_medico.condiciones_cronicas.lower()
             if condiciones:
-                otras = CatalogoRestriccion.objects.filter(
-                    estado='activo'
-                ).exclude(pk=restriccion.pk)
+                otras = CatalogoRestriccion.objects.filter(estado="activo").exclude(
+                    pk=restriccion.pk
+                )
                 for r in otras:
                     palabras = [
-                        p.strip() for p in r.condiciones_asociadas.lower().split(',')
+                        p.strip()
+                        for p in r.condiciones_asociadas.lower().split(",")
                         if len(p.strip()) > 3
                     ]
                     if any(p in condiciones for p in palabras):
                         ya_activa = ResidenteRestriccion.objects.filter(
-                            residente=residente,
-                            restriccion=r,
-                            estado='activa'
+                            residente=residente, restriccion=r, estado="activa"
                         ).exists()
                         if not ya_activa:
-                            sugeridas.append({
-                                'id':        r.pk,
-                                'nombre':    r.nombre,
-                                'severidad': r.severidad,
-                            })
+                            sugeridas.append(
+                                {
+                                    "id": r.pk,
+                                    "nombre": r.nombre,
+                                    "severidad": r.severidad,
+                                }
+                            )
         except Exception:
             pass
 
         response_data = ResidenteRestriccionSerializer(rr).data
         if sugeridas:
             response_data = dict(response_data)
-            response_data['sugeridas'] = sugeridas
+            response_data["sugeridas"] = sugeridas
 
         return Response(response_data, status=status.HTTP_201_CREATED)
 

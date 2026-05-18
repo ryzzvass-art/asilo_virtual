@@ -4,7 +4,7 @@ from usuarios.views import UsuarioViewSet
 from .views import SolicitarPasswordResetView
 from .views import ConfirmarPasswordResetView
 from .views import UsuarioEstadoView
-from rest_framework_simplejwt.views import  TokenRefreshView
+from rest_framework_simplejwt.views import TokenRefreshView
 from .views import CustomTokenObtainPairView
 
 router = DefaultRouter()

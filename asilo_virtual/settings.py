@@ -63,9 +63,9 @@ INSTALLED_APPS = [
     "residentes.apps.ResidentesConfig",
     "medicamentos.apps.MedicamentosConfig",
     "nutricion.apps.NutricionConfig",
-    "actividades",
+    "actividades.apps.ActividadesConfig",
     "auditoria",
-    "visitas",
+    "visitas.apps.VisitasConfig",
 ]
 
 MIDDLEWARE = [
