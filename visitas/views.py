@@ -3,7 +3,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from auditoria.mixins import AuditLogMixin
+from auditoria.mixins import AuditLogMixin,serializar_instancia
 
 from .models import Visitante, VisitanteResidente, RegistroVisita
 from .serializers import (
@@ -45,11 +45,14 @@ class VisitanteListCreateView(APIView):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
-class AutorizarVisitanteView(APIView):
+class AutorizarVisitanteView(AuditLogMixin, APIView):
     """
     POST  /api/visitantes/{id}/autorizar/{residente_id}/
     T-83: Crear autorización de visitante para un residente.
     """
+
+    # A1 - Declarar auditoria
+    audit_entidad = "autorizaciones_visitantes"
 
     permission_classes = [IsAdministrador]
 
@@ -68,10 +71,18 @@ class AutorizarVisitanteView(APIView):
                     {"error": "Este visitante ya está autorizado para este residente."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
+            
             # Reactivar si estaba suspendido
+            # A2 - snapshot
+            antes = serializar_instancia(existente)
+            
             existente.estado = "activo"
             existente.autorizado_por = request.user
             existente.save(update_fields=["estado", "autorizado_por"])
+
+            # A3 - registrar
+            self.audit_editar(request, antes, existente)
+
             return Response(VisitanteResidenteSerializer(existente).data)
 
         # Crear nueva autorización
@@ -82,6 +93,10 @@ class AutorizarVisitanteView(APIView):
             relacion=relacion,
             autorizado_por=request.user,
         )
+
+        # A3 - Registrar auditoría de creación
+        self.audit_crear(request, vr)
+
         return Response(
             VisitanteResidenteSerializer(vr).data, status=status.HTTP_201_CREATED
         )

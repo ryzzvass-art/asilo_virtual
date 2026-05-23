@@ -4,7 +4,7 @@ from rest_framework import status
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from datetime import timedelta
-from auditoria.mixins import AuditLogMixin
+from auditoria.mixins import AuditLogMixin,serializar_instancia
 
 # Necesario para el F() en get_alertas_stock
 from django.db import models
@@ -92,11 +92,14 @@ class MedicamentoDetailView(APIView):
         return Response(CatalogoMedicamentoSerializer(medicamento).data)
 
 
-class MedicamentoArchivarView(APIView):
+class MedicamentoArchivarView(AuditLogMixin, APIView):
     """
     PATCH /api/medicamentos/{id}/archivar/  → archivar (T-41)
     Solo Admin. Archivado no aparece en listados por defecto.
     """
+
+    # A1 - Declarar auditoria
+    audit_entidad = "medicamentos"
 
     permission_classes = [IsAdministrador]
 
@@ -109,8 +112,15 @@ class MedicamentoArchivarView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # A2 - snapshot
+        antes = serializar_instancia(medicamento)
+
         medicamento.estado = "archivado"
         medicamento.save(update_fields=["estado"])
+
+        # A3 - registrar
+        self.audit_editar(request, antes, medicamento)
+
         return Response(
             {
                 "mensaje": f"'{medicamento.nombre_comercial}' archivado correctamente.",
@@ -238,11 +248,14 @@ class AlertasStockView(APIView):
         )
 
 
-class PrescripcionListCreateView(APIView):
+class PrescripcionListCreateView(AuditLogMixin, APIView):
     """
     GET  /api/residentes/{id}/medicamentos/  → listar prescripciones activas (T-50)
     POST /api/residentes/{id}/medicamentos/  → crear prescripción (T-49)
     """
+
+    # A1 - Declarar auditoria
+    audit_entidad = "prescripciones"
 
     permission_classes = [IsAdminOrCuidador]
 
@@ -295,13 +308,15 @@ class PrescripcionListCreateView(APIView):
 
         prescripcion = serializer.save(residente=residente, prescrito_por=request.user)
 
+        # A3 - Registrar auditoría de creación
+        self.audit_crear(request, prescripcion)
+
         response_data = serializer.data
         if advertencias:
             response_data = dict(serializer.data)
             response_data["advertencias"] = advertencias
 
         return Response(response_data, status=status.HTTP_201_CREATED)
-
 
 # ── T-48, T-49, T-50 — Prescripciones ─────────────────────
 

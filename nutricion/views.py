@@ -2,7 +2,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from django.shortcuts import get_object_or_404
-from auditoria.mixins import AuditLogMixin
+from auditoria.mixins import AuditLogMixin,serializar_instancia
 
 from .models import (
     CatalogoRestriccion,
@@ -403,11 +403,14 @@ def verificar_restricciones(residente_id, alimento_id):
 # ── T-68, T-69 — Planes Nutricionales ─────────────────────
 
 
-class PlanListCreateView(APIView):
+class PlanListCreateView(AuditLogMixin, APIView):
     """
     GET  /api/residentes/{id}/planes/  → listar todos los planes (T-75)
     POST /api/residentes/{id}/planes/  → crear plan nuevo (T-69)
     """
+
+    # A1 - Declarar auditoria
+    audit_entidad = "planes"
 
     permission_classes = [IsAdminOrCuidador]
 
@@ -452,10 +455,12 @@ class PlanListCreateView(APIView):
                 residente=residente, creado_por=request.user, estado="vigente"
             )
 
+        # A3 - Registrar auditoría de creación
+        self.audit_crear(request, plan)
+
         return Response(
             PlanNutricionalSerializer(plan).data, status=status.HTTP_201_CREATED
         )
-
 
 class PlanDetailView(APIView):
     """

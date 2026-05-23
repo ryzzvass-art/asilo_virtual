@@ -337,7 +337,7 @@ class UsuarioEstadoView(AuditLogMixin, APIView):
             return Response(
                 {"error": "Usuario no encontrado."}, status=status.HTTP_404_NOT_FOUND
             )
-        # A2- snapshot
+       # A2 - Snapshot antes de modificar
         antes = serializar_instancia(usuario)
         # Seguridad: un admin no puede desactivarse a sí mismo
         if request.user.pk == usuario.pk:
@@ -356,7 +356,7 @@ class UsuarioEstadoView(AuditLogMixin, APIView):
         usuario.estado = nuevo_estado
         usuario.save(update_fields=["estado"])
 
-        # A3-registrar
+        # A3 - Registrar auditoría
         self.audit_editar(request, antes, usuario)
 
         return Response(

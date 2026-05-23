@@ -8,7 +8,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
-from auditoria.mixins import AuditLogMixin
+from auditoria.mixins import AuditLogMixin,serializar_instancia
 
 from .models import (
     Residente,
@@ -37,11 +37,14 @@ from usuarios.permissions import IsAdministrador, IsAdminOrCuidador
 # ============================================================
 
 
-class ResidenteListCreateView(APIView):
+class ResidenteListCreateView(AuditLogMixin, APIView):
     """
     GET  /api/residentes/        → listar con filtros (T-20)
     POST /api/residentes/        → crear residente (T-19)
     """
+
+    # A1 - Declarar auditoria
+    audit_entidad = "residentes"
 
     permission_classes = [IsAdminOrCuidador]
 
@@ -96,17 +99,22 @@ class ResidenteListCreateView(APIView):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         # Asignar automáticamente el usuario autenticado como registrado_por
-        serializer.save(registrado_por=request.user)
+        residente = serializer.save(registrado_por=request.user)
+
+        # A3 - Registrar auditoría de creación
+        self.audit_crear(request, residente)
 
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
-
-class ResidenteDetailView(APIView):
+class ResidenteDetailView(AuditLogMixin, APIView):
     """
     GET   /api/residentes/{id}/  → detalle completo (T-21)
     PUT   /api/residentes/{id}/  → edición total (T-22)
     PATCH /api/residentes/{id}/  → edición parcial (T-22)
     """
+
+    # A1 - Declarar auditoria
+    audit_entidad = "residentes"
 
     permission_classes = [IsAdminOrCuidador]
 
@@ -123,11 +131,21 @@ class ResidenteDetailView(APIView):
                 {"error": "Solo el Administrador puede editar residentes."},
                 status=status.HTTP_403_FORBIDDEN,
             )
+        
         residente = get_object_or_404(Residente, pk=pk)
+        
+        # A2 - snapshot
+        antes = serializar_instancia(residente)
+
         serializer = ResidenteEditarSerializer(residente, data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
         serializer.save()
+
+        # A3 - registrar
+        self.audit_editar(request, antes, residente)
+
         return Response(serializer.data)
 
     def patch(self, request, pk):
@@ -137,32 +155,51 @@ class ResidenteDetailView(APIView):
                 {"error": "Solo el Administrador puede editar residentes."},
                 status=status.HTTP_403_FORBIDDEN,
             )
+        
         residente = get_object_or_404(Residente, pk=pk)
+        
+        # A2 - snapshot
+        antes = serializar_instancia(residente)
+
         # partial=True permite enviar solo los campos que cambiaron
         serializer = ResidenteEditarSerializer(
             residente, data=request.data, partial=True
         )
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
         serializer.save()
+
+        # A3 - registrar
+        self.audit_editar(request, antes, residente)
+
         return Response(serializer.data)
 
-
-class ResidenteEstadoView(APIView):
+class ResidenteEstadoView(AuditLogMixin, APIView):
     """
     PATCH /api/residentes/{id}/estado/  → cambiar estado (T-23)
     """
+
+    # A1 - Declarar auditoria
+    audit_entidad = "residentes"
 
     permission_classes = [IsAdminOrCuidador]
 
     def patch(self, request, pk):
         residente = get_object_or_404(Residente, pk=pk)
+        
+        # A2 - snapshot
+        antes = serializar_instancia(residente)
+
         serializer = CambiarEstadoResidenteSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         residente.estado = serializer.validated_data["estado"]
         residente.save(update_fields=["estado", "updated_at"])
+
+        # A3 - registrar
+        self.audit_editar(request, antes, residente)
 
         return Response(
             {
@@ -171,7 +208,6 @@ class ResidenteEstadoView(APIView):
                 "estado": residente.estado,
             }
         )
-
 
 # ============================================================
 # T-24, T-25 — Contactos de Emergencia

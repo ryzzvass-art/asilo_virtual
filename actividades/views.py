@@ -3,7 +3,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from auditoria.mixins import AuditLogMixin
+from auditoria.mixins import AuditLogMixin,serializar_instancia
 
 
 from .models import Actividad, ActividadResidente
@@ -14,11 +14,14 @@ from residentes.models import Residente
 # ── T-78, T-79 — CRUD Actividades ─────────────────────────
 
 
-class ActividadListCreateView(APIView):
+class ActividadListCreateView(AuditLogMixin, APIView):
     """
     GET  /api/actividades/  → listar con filtros (todos los roles)
     POST /api/actividades/  → crear (solo Admin)
     """
+
+    # A1 - Declarar auditoria
+    audit_entidad = "actividades"
 
     def get_permissions(self):
         if self.request.method == "POST":
@@ -47,7 +50,12 @@ class ActividadListCreateView(APIView):
         serializer = ActividadSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        serializer.save(creado_por=request.user)
+        
+        actividad = serializer.save(creado_por=request.user)
+
+        # A3 - Registrar auditoría de creación
+        self.audit_crear(request, actividad)
+
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
@@ -83,11 +91,14 @@ class ActividadDetailView(APIView):
         return Response(serializer.data)
 
 
-class ActividadCancelarView(APIView):
+class ActividadCancelarView(AuditLogMixin, APIView):
     """
     PATCH /api/actividades/{id}/cancelar/
     T-79: Cancelada queda en sistema para alertas del dashboard.
     """
+
+    # A1 - Declarar auditoria
+    audit_entidad = "actividades"
 
     permission_classes = [IsAdministrador]
 
@@ -98,8 +109,16 @@ class ActividadCancelarView(APIView):
                 {"error": "Esta actividad ya está cancelada."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        # A2 - snapshot
+        antes = serializar_instancia(actividad)
+
         actividad.estado = "cancelada"
         actividad.save(update_fields=["estado"])
+
+        # A3 - registrar
+        self.audit_editar(request, antes, actividad)
+
         return Response(
             {
                 "mensaje": f"Actividad '{actividad.nombre}' cancelada.",
