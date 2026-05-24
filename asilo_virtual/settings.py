@@ -29,7 +29,16 @@ SECRET_KEY = config("SECRET_KEY")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config("DEBUG", cast=bool)
 
-ALLOWED_HOSTS = []
+
+
+
+# Configuración de ALLOWED_HOSTS según el entorno
+if os.environ.get('DATABASE_URL'):
+    # Producción — Render
+    ALLOWED_HOSTS = ['asilo-virtual.onrender.com']
+else:
+    # Desarrollo local
+    ALLOWED_HOSTS = ['localhost', '127.0.0.1']
 
 # Configuracion Email para pruebas normales
 # EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
