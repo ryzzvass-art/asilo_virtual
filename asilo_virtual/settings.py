@@ -79,6 +79,8 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "corsheaders.middleware.CorsMiddleware",
+    'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
 ]
 
 ROOT_URLCONF = "asilo_virtual.urls"
@@ -196,5 +198,10 @@ SPECTACULAR_SETTINGS = {
      'SERVE_INCLUDE_SCHEMA': False,
  }
 
+#Configuracion Asgi
 ASGI_APPLICATION = "asilo_virtual.asgi.application"
 CHANNEL_LAYERS = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}}
+
+#Configuracion para preparar, comprimir y servir archivos estaticos
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
