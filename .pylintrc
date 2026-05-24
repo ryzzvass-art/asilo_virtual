@@ -1,8 +1,0 @@
-[MASTER]
-load-plugins=pylint_django
-
-[MESSAGES CONTROL]
-# Desactiva avisos que a veces estorban en Django
-disable=C0114, # Missing module docstring
-        C0115, # Missing class docstring
-        C0116  # Missing function docstring

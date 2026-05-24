@@ -280,6 +280,14 @@ class PrescripcionListCreateView(AuditLogMixin, APIView):
         Verifica contraindicaciones contra condiciones_cronicas del residente (RF-10-B).
         """
         residente = get_object_or_404(Residente, pk=pk)
+
+        if residente.estado == 'dado_de_alta':
+            return Response(
+                {"error": "No se puede prescribir medicamentos a un residente dado de alta."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        # ========================
+
         serializer = ResidenteMedicamentoSerializer(data=request.data)
 
         if not serializer.is_valid():
@@ -386,6 +394,14 @@ class AdministracionCreateView(APIView):
         serializer = AdministracionMedicamentoSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        pm = serializer.validated_data['residente_medicamento']
+        if pm.estado == 'finalizado':
+            return Response(
+                {"error": "No se puede registrar una toma de una prescripción finalizada."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
         serializer.save(realizado_por=request.user)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 

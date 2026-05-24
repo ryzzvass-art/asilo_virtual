@@ -66,6 +66,8 @@ INSTALLED_APPS = [
     "actividades.apps.ActividadesConfig",
     "auditoria",
     "visitas.apps.VisitasConfig",
+    "drf_spectacular",
+    "corsheaders",
 ]
 
 MIDDLEWARE = [
@@ -76,6 +78,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "corsheaders.middleware.CorsMiddleware",
 ]
 
 ROOT_URLCONF = "asilo_virtual.urls"
@@ -163,6 +166,11 @@ REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ),
+    # Exception Handler personalizado
+    'EXCEPTION_HANDLER': 'asilo_virtual.exception_handler.custom_exception_handler',
+
+    # permite que la API sea compatible con herramientas modernas de interfaz de usuario como Swagger 
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
 
 # Modelo de usuario personalizado
@@ -179,6 +187,14 @@ SIMPLE_JWT = {
     "USER_ID_FIELD": "id",
     "USER_ID_CLAIM": "user_id",
 }
+
+#Configuracion de Spectacular
+SPECTACULAR_SETTINGS = {
+     'TITLE': 'Sistema de Gestión — Asilo Virtual',
+     'DESCRIPTION': 'API REST para gestión integral de residentes, medicamentos, nutrición, actividades y visitas.',
+     'VERSION': '1.3.0',
+     'SERVE_INCLUDE_SCHEMA': False,
+ }
 
 ASGI_APPLICATION = "asilo_virtual.asgi.application"
 CHANNEL_LAYERS = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}}
