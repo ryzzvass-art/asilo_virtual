@@ -20,6 +20,8 @@ from .serializers import CambiarEstadoUsuarioSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView
 from .serializers import CustomTokenObtainPairSerializer
 from auditoria.mixins import AuditLogMixin, serializar_instancia
+from django.template.loader import render_to_string
+
 
 
 class UsuarioViewSet(viewsets.ModelViewSet):
@@ -180,19 +182,9 @@ class LoginView(APIView):
 class SolicitarPasswordResetView(APIView):
     """
     POST /api/auth/password-reset/solicitar/
-
-    Qué hace:
-    1. Recibe el email
-    2. Busca el usuario
-    3. Invalida tokens anteriores del mismo usuario
-    4. Crea un nuevo token
-    5. Envía el email con el enlace de recuperación
-
-    Seguridad: siempre devuelve 200, aunque el email no exista
-    (para no revelar qué emails están registrados)
     """
 
-    permission_classes = [AllowAny]  # No requiere estar autenticado
+    permission_classes = [AllowAny]
 
     def post(self, request):
         serializer = SolicitarResetSerializer(data=request.data)
@@ -202,58 +194,48 @@ class SolicitarPasswordResetView(APIView):
 
         email = serializer.validated_data["email"]
 
-        # Buscar usuario (puede no existir — ver nota de seguridad abajo)
         try:
             usuario = Usuario.objects.get(email=email, estado="activo")
         except Usuario.DoesNotExist:
-            # SEGURIDAD: no revelamos que el email no existe
-            # Respondemos igual que si hubiera funcionado
             return Response(
-                {
-                    "mensaje": "Si el email está registrado, recibirás un enlace en minutos."
-                },
+                {"mensaje": "Si el email está registrado, recibirás un enlace en minutos."},
                 status=status.HTTP_200_OK,
             )
 
-        # Invalidar todos los tokens anteriores de este usuario
-        # (evita que haya múltiples tokens válidos al mismo tiempo)
-        PasswordResetToken.objects.filter(usuario=usuario, usado=False).update(
-            usado=True
-        )
+        # Invalidar tokens anteriores
+        PasswordResetToken.objects.filter(usuario=usuario, usado=False).update(usado=True)
 
-        # Crear nuevo token (expira_en se calcula automáticamente en save())
+        # Crear nuevo token
         nuevo_token = PasswordResetToken.objects.create(usuario=usuario)
 
-        # Construir el enlace de recuperación
-        # En producción: usar settings.FRONTEND_URL
-        # En desarrollo: ajusta la URL según tu frontend
+        # ==================== CAMBIOS IMPORTANTES ====================
+        # Construir el enlace
         reset_link = f"http://localhost:3000/reset-password?token={nuevo_token.token}"
 
-        # Enviar email
+        # Preparar contexto para el template HTML
+        context = {
+            'user': usuario,
+            'reset_link': reset_link,
+        }
+
+        # Renderizar el template HTML
+        html_message = render_to_string('emails/password_reset_email.html', context)
+
+        # Enviar email con HTML
         send_mail(
             subject="Recuperación de contraseña — Asilo Virtual",
-            message=f"""
-Hola {usuario.nombre},
- 
-Recibiste este email porque solicitaste recuperar tu contraseña.
- 
-Haz clic en el siguiente enlace (válido por 1 hora):
-{reset_link}
- 
-Si no solicitaste esto, ignora este mensaje.
- 
-— Sistema Asilo Virtual
-            """,
+            message=f"Hola {usuario.nombre}, recibiste este email porque solicitaste recuperar tu contraseña.",  # Texto plano (backup)
             from_email=settings.DEFAULT_FROM_EMAIL,
             recipient_list=[usuario.email],
+            html_message=html_message,          # ← Esto activa el diseño bonito
             fail_silently=False,
         )
+        # ============================================================
 
         return Response(
             {"mensaje": "Si el email está registrado, recibirás un enlace en minutos."},
             status=status.HTTP_200_OK,
         )
-
 
 class ConfirmarPasswordResetView(APIView):
     """

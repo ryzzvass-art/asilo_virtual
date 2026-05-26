@@ -22,16 +22,16 @@ class BrevoEmailBackend(BaseEmailBackend):
             try:
                 to_list = [{"email": email} for email in msg.to]
                 
+                # Configuración del correo con soporte para HTML dinámico
                 send_smtp_email = sib_api_v3_sdk.SendSmtpEmail(
                     to=to_list,
                     sender={
-                        "name": "Asilo Virtual",           # ← Exacto como en Brevo
-                        "email": "ryzzvass@gmail.com"
+                        "name": "Asilo Virtual",
+                        "email": "ryzvass@gmail.com"  # ← Verifica que coincida con tu Brevo
                     },
                     subject=msg.subject,
-                    text_content=msg.body,
-                    # Si usas HTML en recuperación de contraseña:
-                    # html_content=msg.alternatives[0][0] if msg.alternatives else None,
+                    text_content=msg.body,                             # Fallback en texto plano
+                    html_content=getattr(msg, 'html_message', None),   # ← Actualización aquí
                 )
 
                 response = api_instance.send_transac_email(send_smtp_email)
