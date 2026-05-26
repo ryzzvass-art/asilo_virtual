@@ -37,7 +37,7 @@ class BrevoEmailBackend(BaseEmailBackend):
                     to=to_list,
                     sender={
                         "name": "Asilo Virtual",
-                        "email": "ryzvass@gmail.com"   # ← Debe estar verificado en Brevo
+                        "email": "ryzzvass@gmail.com"   # ← Debe estar verificado en Brevo
                     },
                     subject=msg.subject,
                     text_content=msg.body,
