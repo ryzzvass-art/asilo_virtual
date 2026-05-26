@@ -179,11 +179,8 @@ class LoginView(APIView):
 # reset paswword
 
 
-class SolicitarPasswordResetView(APIView):
-    """
-    POST /api/auth/password-reset/solicitar/
-    """
 
+class SolicitarPasswordResetView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -208,35 +205,31 @@ class SolicitarPasswordResetView(APIView):
         # Crear nuevo token
         nuevo_token = PasswordResetToken.objects.create(usuario=usuario)
 
-        # ==================== CAMBIOS IMPORTANTES ====================
-        # Construir el enlace
         reset_link = f"http://localhost:3000/reset-password?token={nuevo_token.token}"
 
-        # Preparar contexto para el template HTML
+        # Preparar contexto
         context = {
             'user': usuario,
             'reset_link': reset_link,
         }
 
-        # Renderizar el template HTML
+        # Renderizar template
         html_message = render_to_string('emails/password_reset_email.html', context)
 
-        # Enviar email con HTML
+        # Enviar email
         send_mail(
             subject="Recuperación de contraseña — Asilo Virtual",
-            message=f"Hola {usuario.nombre}, recibiste este email porque solicitaste recuperar tu contraseña.",  # Texto plano (backup)
+            message="Hola, recibiste este email porque solicitaste recuperar tu contraseña.",  
             from_email=settings.DEFAULT_FROM_EMAIL,
             recipient_list=[usuario.email],
-            html_message=html_message,          # ← Esto activa el diseño bonito
+            html_message=html_message,
             fail_silently=False,
         )
-        # ============================================================
 
         return Response(
             {"mensaje": "Si el email está registrado, recibirás un enlace en minutos."},
             status=status.HTTP_200_OK,
         )
-
 class ConfirmarPasswordResetView(APIView):
     """
     POST /api/auth/password-reset/confirmar/
