@@ -13,8 +13,8 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 from pathlib import Path
 from decouple import config
 from datetime import timedelta
-import dj_database_url   # ← Añadido
-import os                # ← Añadido
+import dj_database_url
+import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -30,8 +30,6 @@ SECRET_KEY = config("SECRET_KEY")
 DEBUG = config("DEBUG", cast=bool)
 
 
-
-
 # Configuración de ALLOWED_HOSTS según el entorno
 if os.environ.get('DATABASE_URL'):
     # Producción — Render
@@ -40,25 +38,35 @@ else:
     # Desarrollo local
     ALLOWED_HOSTS = ['localhost', '127.0.0.1']
 
-# Configuracion Email para pruebas normales
-# EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
-# DEFAULT_FROM_EMAIL = 'noreply@asilo-virtual.com'
 
-# Para pruebas reales
-EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
-EMAIL_HOST = "smtp.gmail.com"
-EMAIL_PORT = 465
-EMAIL_USE_TLS = False
-EMAIL_USE_SSL = True
-EMAIL_HOST_USER = config("EMAIL_HOST_USER")
-EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD")
-DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL")
+# ==================== CONFIGURACIÓN DE EMAIL ====================
+
+if os.environ.get('DATABASE_URL'):
+    # Producción — Render (SMTP real)
+    EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+    EMAIL_HOST = 'smtp.gmail.com'
+    EMAIL_PORT = 587
+    EMAIL_USE_TLS = True
+    EMAIL_USE_SSL = False
+    EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER')
+    EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD')
+    DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL')
+else:
+    # Desarrollo local
+    EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+    EMAIL_HOST = 'smtp.gmail.com'
+    EMAIL_PORT = 587
+    EMAIL_USE_TLS = True
+    EMAIL_USE_SSL = False
+    EMAIL_HOST_USER = config('EMAIL_HOST_USER')
+    EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD')
+    DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL')
 
 
 # Application definition
 
 INSTALLED_APPS = [
-    "daphne",  # Servidor ASGI para Channels (WebSockets)
+    "daphne",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -136,40 +144,25 @@ else:
 
 
 # Password validation
-# https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
-
 AUTH_PASSWORD_VALIDATORS = [
-    {
-        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
-    },
-    {
-        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
-    },
-    {
-        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
-    },
-    {
-        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
-    },
+    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
 
 # Internationalization
-# https://docs.djangoproject.com/en/6.0/topics/i18n/
-
 LANGUAGE_CODE = "en-us"
-
 TIME_ZONE = "America/La_Paz"
-
 USE_I18N = True
-
 USE_TZ = True
 
 
-# Static files (CSS, JavaScript, Images)
-# https://docs.djangoproject.com/en/6.0/howto/static-files/
-
+# Static files
 STATIC_URL = "static/"
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 
 # Django REST Framework
@@ -181,14 +174,10 @@ REST_FRAMEWORK = {
     "DEFAULT_PARSER_CLASSES": [
         "rest_framework.parsers.JSONParser",
     ],
-    # Agregar autenticación JWT por defecto
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ),
-    # Exception Handler personalizado
     'EXCEPTION_HANDLER': 'asilo_virtual.exception_handler.custom_exception_handler',
-
-    # permite que la API sea compatible con herramientas modernas de interfaz de usuario como Swagger 
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
 
@@ -197,33 +186,26 @@ AUTH_USER_MODEL = "usuarios.Usuario"
 
 # Configuración de JWT
 SIMPLE_JWT = {
-    # El access token dura 8 horas (RF-03)
     "ACCESS_TOKEN_LIFETIME": timedelta(hours=8),
-    # El refresh token dura 1 día
     "REFRESH_TOKEN_LIFETIME": timedelta(days=1),
     "AUTH_HEADER_TYPES": ("Bearer",),
-    # Usar el campo email en lugar de username
     "USER_ID_FIELD": "id",
     "USER_ID_CLAIM": "user_id",
 }
 
-#Configuracion de Spectacular
+# Configuracion de Spectacular
 SPECTACULAR_SETTINGS = {
-     'TITLE': 'Sistema de Gestión — Asilo Virtual',
-     'DESCRIPTION': 'API REST para gestión integral de residentes, medicamentos, nutrición, actividades y visitas.',
-     'VERSION': '1.3.0',
-     'SERVE_INCLUDE_SCHEMA': False,
- }
+    'TITLE': 'Sistema de Gestión — Asilo Virtual',
+    'DESCRIPTION': 'API REST para gestión integral de residentes, medicamentos, nutrición, actividades y visitas.',
+    'VERSION': '1.3.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+}
 
-#Configuracion Asgi
+# Configuracion Asgi
 ASGI_APPLICATION = "asilo_virtual.asgi.application"
 CHANNEL_LAYERS = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}}
 
-#Configuracion para preparar, comprimir y servir archivos estaticos
-STATIC_ROOT = BASE_DIR / 'staticfiles'
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
-
-#Configuracion de Cors (control de sitios externos)
+# Configuracion de Cors
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
