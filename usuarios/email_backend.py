@@ -27,11 +27,11 @@ class BrevoEmailBackend(BaseEmailBackend):
                     to=to_list,
                     sender={
                         "name": "Asilo Virtual",
-                        "email": "ryzvass@gmail.com"  # ← Verifica que coincida con tu Brevo
+                        "email": "ryzzvass@gmail.com"  
                     },
                     subject=msg.subject,
-                    text_content=msg.body,                             # Fallback en texto plano
-                    html_content=getattr(msg, 'html_message', None),   # ← Actualización aquí
+                    text_content=msg.body,                            
+                    html_content=getattr(msg, 'html_message', None),   
                 )
 
                 response = api_instance.send_transac_email(send_smtp_email)
