@@ -39,20 +39,16 @@ else:
     ALLOWED_HOSTS = ['localhost', '127.0.0.1']
 
 
-# ==================== CONFIGURACIÓN DE EMAIL ====================
-
 if os.environ.get('DATABASE_URL'):
-    # Producción — Render (Gmail puerto 465)
-    EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-    EMAIL_HOST = 'smtp.gmail.com'
-    EMAIL_PORT = 465
-    EMAIL_USE_TLS = False
-    EMAIL_USE_SSL = True
-    EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER')
-    EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD')
-    DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL')
+    # Producción — Render (Usando tu backend personalizado)
+    EMAIL_BACKEND = 'usuarios.email_backend.BrevoEmailBackend' 
+    
+    # Mantenemos las variables esenciales para tu código
+    BREVO_API_KEY = os.environ.get('BREVO_API_KEY')
+    # CORRECCIÓN: Faltaba el os.environ.get para leer la variable real en Render
+    DEFAULT_FROM_EMAIL = os.environ.get('BREVO_EMAIL') 
 else:
-    # Desarrollo local (Gmail puerto 587)
+    # Desarrollo local (Mantenemos Gmail por SMTP usando el archivo .env)
     EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
     EMAIL_HOST = 'smtp.gmail.com'
     EMAIL_PORT = 587
@@ -61,7 +57,6 @@ else:
     EMAIL_HOST_USER = config('EMAIL_HOST_USER')
     EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD')
     DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL')
-
 
 # Application definition
 
