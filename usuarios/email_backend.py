@@ -26,7 +26,7 @@ class BrevoEmailBackend(BaseEmailBackend):
                     to=to_list,
                     sender={
                         "name": "Asilo Virtual",           # ← Exacto como en Brevo
-                        "email": "ryzvass@gmail.com"
+                        "email": "ryzzvass@gmail.com"
                     },
                     subject=msg.subject,
                     text_content=msg.body,
