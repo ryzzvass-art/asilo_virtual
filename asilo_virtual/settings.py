@@ -42,17 +42,11 @@ else:
 # ==================== CONFIGURACIÓN DE EMAIL ====================
 
 if os.environ.get('DATABASE_URL'):
-    # Producción — Render (SMTP real)
-    EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-    EMAIL_HOST = 'smtp.gmail.com'
-    EMAIL_PORT = 587
-    EMAIL_USE_TLS = True
-    EMAIL_USE_SSL = False
-    EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER')
-    EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD')
-    DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL')
+    # Producción — Render (Resend)
+    EMAIL_BACKEND = 'usuarios.email_backend.ResendEmailBackend'
+    DEFAULT_FROM_EMAIL = 'onboarding@resend.dev'
 else:
-    # Desarrollo local
+    # Desarrollo local (Gmail SMTP)
     EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
     EMAIL_HOST = 'smtp.gmail.com'
     EMAIL_PORT = 587
