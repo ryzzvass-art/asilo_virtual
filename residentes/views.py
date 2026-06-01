@@ -70,9 +70,13 @@ class ResidenteListCreateView(AuditLogMixin, APIView):
         if estado:
             queryset = queryset.filter(estado=estado)
 
-        # Paginación manual (page_size=20)
+        # === PAGINACIÓN CONFIGURABLE ===
         page = int(request.query_params.get("page", 1))
-        page_size = 20
+        page_size = int(request.query_params.get("page_size", 20))
+        
+        # Seguridad: límite máximo de registros por página
+        page_size = min(max(page_size, 1), 200)
+
         start = (page - 1) * page_size
         end = start + page_size
 
@@ -80,14 +84,15 @@ class ResidenteListCreateView(AuditLogMixin, APIView):
         pagina = queryset[start:end]
 
         serializer = ResidenteSerializer(pagina, many=True)
-        return Response(
-            {
-                "total": total,
-                "page": page,
-                "pages": (total + page_size - 1) // page_size,
-                "results": serializer.data,
-            }
-        )
+        
+        return Response({
+            "count": total,           # Estándar DRF
+            "total": total,           # Compatibilidad con tu frontend
+            "page": page,
+            "pages": (total + page_size - 1) // page_size,
+            "page_size": page_size,   # ← Importante para el frontend
+            "results": serializer.data,
+        })
 
     def post(self, request):
         """
