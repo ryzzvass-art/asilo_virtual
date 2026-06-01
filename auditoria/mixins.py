@@ -91,7 +91,7 @@ class AuditLogMixin:
             accion="editar",
             entidad_nombre=self._get_entidad_nombre(),
             entidad_id=instancia_despues.pk,
-            datos_anteriores=serializar_instancia(instancia_antes),
+            datos_anteriores=instancia_antes,
             datos_nuevos=serializar_instancia(instancia_despues),
         )
 

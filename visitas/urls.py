@@ -6,6 +6,8 @@ from .views import (
     RegistroVisitaListCreateView,
     RegistroVisitaSalidaView,
     HistorialVisitasResidenteView,
+    VisitanteAutorizacionesView,
+    ResidenteAutorizacionesView,
 )
 
 urlpatterns = [
@@ -35,4 +37,14 @@ urlpatterns = [
         HistorialVisitasResidenteView.as_view(),
         name="historial-visitas",
     ),
+    path(
+    "visitantes/<int:visitante_id>/autorizaciones/",
+    VisitanteAutorizacionesView.as_view(),
+    name="visitante-autorizaciones",
+),
+    path(
+    "residentes/<int:residente_id>/autorizaciones/",
+    ResidenteAutorizacionesView.as_view(),
+    name="residente-autorizaciones",
+),
 ]

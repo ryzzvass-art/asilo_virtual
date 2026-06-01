@@ -4,6 +4,7 @@ from .views import (
     ActividadDetailView,
     ActividadCancelarView,
     ActividadResidenteView,
+    ActividadRealizadaView,
 )
 
 urlpatterns = [
@@ -28,4 +29,9 @@ urlpatterns = [
         ActividadResidenteView.as_view(),
         name="actividad-residente-detail",
     ),
+    path(
+    "actividades/<int:pk>/realizada/",
+    ActividadRealizadaView.as_view(),
+    name="actividad-realizada",
+),
 ]

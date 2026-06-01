@@ -12,6 +12,7 @@ from .views import (
     PlanListCreateView,
     PlanDetailView,
     ComidaListCreateView,
+    ComidaDetailView,
 )
 
 urlpatterns = [
@@ -76,5 +77,10 @@ urlpatterns = [
         "planes/<int:plan_id>/comidas/",
         ComidaListCreateView.as_view(),
         name="comida-list-create",
+    ),
+    path(
+    "comidas/<int:comida_id>/",
+    ComidaDetailView.as_view(),
+    name="comida-detail",
     ),
 ]

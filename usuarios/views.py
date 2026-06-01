@@ -205,7 +205,7 @@ class SolicitarPasswordResetView(APIView):
         # Crear nuevo token
         nuevo_token = PasswordResetToken.objects.create(usuario=usuario)
 
-        reset_link = f"http://localhost:3000/reset-password?token={nuevo_token.token}"
+        reset_link = f"http://localhost:5173/reset-password?token={nuevo_token.token}"
 
         # Preparar contexto
         context = {

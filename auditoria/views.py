@@ -125,7 +125,7 @@ class DashboardView(APIView):
                 "medicamento": t[
                     "residente_medicamento__medicamento__nombre_comercial"
                 ],
-                "hora_programada": t["fecha_hora_programada"].strftime("%H:%M"),
+                "hora_programada": timezone.localtime(t["fecha_hora_programada"]).strftime("%H:%M"),
             }
             for t in tomas_omitidas
         ]
@@ -138,7 +138,7 @@ class DashboardView(APIView):
             {
                 "id": a.pk,
                 "nombre": a.nombre,
-                "hora": a.fecha_hora.strftime("%H:%M"),
+                "hora": timezone.localtime(a.fecha_hora).strftime("%H:%M"),
             }
             for a in actividades_hoy.filter(estado="cancelada")
         ]
@@ -162,7 +162,7 @@ class DashboardView(APIView):
             {
                 "visitante": v["visitante_residente__visitante__nombre"],
                 "residente": f"{v['visitante_residente__residente__nombre']} {v['visitante_residente__residente__apellido']}",
-                "entrada": v["fecha_hora_entrada"].strftime("%H:%M"),
+                "entrada": timezone.localtime(v["fecha_hora_entrada"]).strftime("%H:%M"),
             }
             for v in visitas_en_curso
         ]
@@ -217,7 +217,7 @@ class ActividadesHoyView(APIView):
                     "nombre": a.nombre,
                     "tipo": a.tipo,
                     "responsable": a.responsable,
-                    "hora": a.fecha_hora.strftime("%H:%M"),
+                    "hora": timezone.localtime(a.fecha_hora).strftime("%H:%M"),
                     "estado": a.estado,
                     "participantes": [
                         {

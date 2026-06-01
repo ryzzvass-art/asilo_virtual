@@ -199,3 +199,17 @@ def get_actividades_hoy():
         .prefetch_related("participantes")
         .select_related("creado_por")
     )
+class ActividadRealizadaView(APIView):
+    """PATCH /api/actividades/{id}/realizada/"""
+    permission_classes = [IsAdminOrCuidador]
+
+    def patch(self, request, pk):
+        actividad = get_object_or_404(Actividad, pk=pk)
+        if actividad.estado == "cancelada":
+            return Response(
+                {"error": "No se puede marcar como realizada una actividad cancelada."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        actividad.estado = "realizada"
+        actividad.save(update_fields=["estado"])
+        return Response({"mensaje": "Actividad marcada como realizada.", "estado": actividad.estado})

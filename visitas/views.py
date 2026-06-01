@@ -19,7 +19,7 @@ from residentes.models import Residente
 
 class VisitanteListCreateView(APIView):
     """
-    GET  /api/visitantes/  → listar visitantes
+    GET  /api/visitantes/  → listar visitantes (filtro ?nombre= y ?dni=)
     POST /api/visitantes/  → registrar visitante (solo Admin)
     """
 
@@ -29,11 +29,13 @@ class VisitanteListCreateView(APIView):
         return [IsAdminOrCuidador()]
 
     def get(self, request):
-        # Filtro opcional por nombre
         nombre = request.query_params.get("nombre")
+        dni    = request.query_params.get("dni")
         queryset = Visitante.objects.all().select_related("registrado_por")
         if nombre:
             queryset = queryset.filter(nombre__icontains=nombre)
+        if dni:
+            queryset = queryset.filter(dni__icontains=dni)
         serializer = VisitanteSerializer(queryset, many=True)
         return Response(serializer.data)
 
@@ -43,6 +45,22 @@ class VisitanteListCreateView(APIView):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         serializer.save(registrado_por=request.user)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+class VisitanteAutorizacionesView(APIView):
+    """
+    GET /api/visitantes/{id}/autorizaciones/
+    Lista los residentes a los que este visitante está autorizado a visitar.
+    """
+    permission_classes = [IsAdminOrCuidador]
+
+    def get(self, request, visitante_id):
+        visitante = get_object_or_404(Visitante, pk=visitante_id)
+        autorizaciones = VisitanteResidente.objects.filter(
+            visitante=visitante
+        ).select_related("residente", "autorizado_por")
+        serializer = VisitanteResidenteSerializer(autorizaciones, many=True)
+        return Response(serializer.data)
 
 
 class AutorizarVisitanteView(AuditLogMixin, APIView):
@@ -150,46 +168,56 @@ class RegistroVisitaListCreateView(APIView):
         residente_id = request.query_params.get("residente_id")
         if residente_id:
             queryset = queryset.filter(visitante_residente__residente_id=residente_id)
+        estado = request.query_params.get("estado")
+        if estado:
+            queryset = queryset.filter(estado=estado)
         serializer = RegistroVisitaSerializer(queryset, many=True)
         return Response(serializer.data)
 
     def post(self, request):
         """
         T-85: Registrar ingreso.
-        Valida que la autorización esté activa — suspendida devuelve 403.
-        fecha_hora_entrada es automática.
+        Acepta visitante_residente (ID directo) O visitante_id + residente_id.
         """
-        vr_id = request.data.get("visitante_residente")
-        if not vr_id:
+        vr_id        = request.data.get("visitante_residente")
+        visitante_id = request.data.get("visitante_id")
+        residente_id = request.data.get("residente_id")
+
+        # Resolver la autorización
+        if vr_id:
+            vr = get_object_or_404(VisitanteResidente, pk=vr_id)
+        elif visitante_id and residente_id:
+            vr = VisitanteResidente.objects.filter(
+                visitante_id=visitante_id,
+                residente_id=residente_id,
+            ).first()
+            if not vr:
+                return Response(
+                    {"error": "Este visitante no está autorizado para ese residente."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        else:
             return Response(
-                {"error": "visitante_residente es requerido."},
+                {"error": "Debe enviar visitante_residente o visitante_id + residente_id."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        vr = get_object_or_404(VisitanteResidente, pk=vr_id)
-
-        # T-85: Visitante suspendido no puede registrar entrada
+        # Visitante suspendido no puede ingresar
         if vr.estado == "suspendido":
             return Response(
-                {
-                    "error": "Esta autorización está suspendida. El visitante no puede ingresar."
-                },
+                {"error": "Esta autorización está suspendida. El visitante no puede ingresar."},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        serializer = RegistroVisitaSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-        registro = serializer.save(
+        registro = RegistroVisita.objects.create(
+            visitante_residente=vr,
             registrado_por=request.user,
             estado="en_curso",
-            # fecha_hora_entrada es auto_now_add
+            observaciones=request.data.get("observaciones", ""),
         )
         return Response(
             RegistroVisitaSerializer(registro).data, status=status.HTTP_201_CREATED
         )
-
 
 class RegistroVisitaSalidaView(APIView):
     """
@@ -249,4 +277,19 @@ class HistorialVisitasResidenteView(APIView):
             queryset = queryset.filter(visitante_residente__visitante_id=visitante_id)
 
         serializer = RegistroVisitaSerializer(queryset, many=True)
+        return Response(serializer.data)
+    
+class ResidenteAutorizacionesView(APIView):
+    """
+    GET /api/residentes/{residente_id}/autorizaciones/
+    Lista los visitantes autorizados para este residente.
+    """
+    permission_classes = [IsAdminOrCuidador]
+
+    def get(self, request, residente_id):
+        residente = get_object_or_404(Residente, pk=residente_id)
+        autorizaciones = VisitanteResidente.objects.filter(
+            residente=residente
+        ).select_related("visitante", "autorizado_por")
+        serializer = VisitanteResidenteSerializer(autorizaciones, many=True)
         return Response(serializer.data)

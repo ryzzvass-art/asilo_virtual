@@ -571,3 +571,12 @@ class ComidaListCreateView(APIView):
             response_data["advertencias"] = recomendados
 
         return Response(response_data, status=status.HTTP_201_CREATED)
+    
+class ComidaDetailView(APIView):
+    """DELETE /api/comidas/{id}/ → quitar una comida del menú"""
+    permission_classes = [IsAdminOrCuidador]
+
+    def delete(self, request, comida_id):
+        comida = get_object_or_404(ComidaDiaria, pk=comida_id)
+        comida.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
