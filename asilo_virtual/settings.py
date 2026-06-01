@@ -208,3 +208,4 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:5173",
     "https://asilo-virtual-frontend.onrender.com",
 ]
+FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
