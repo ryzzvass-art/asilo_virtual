@@ -1,15 +1,11 @@
-# ============================================================
-# SPRINT 2 — Views completas
-# Archivo NUEVO: residentes/views.py
-# ============================================================
 
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
-from auditoria.mixins import AuditLogMixin,serializar_instancia
-
+from auditoria.mixins import AuditLogMixin, serializar_instancia, registrar_auditoria
+from django.db import models
+from datetime import date
 from .models import (
     Residente,
     HistorialMedico,
@@ -26,6 +22,7 @@ from .serializers import (
     ContactoEmergenciaCreateSerializer,
     HistorialMedicoSerializer,
     ObservacionDiariaSerializer,
+    ObservacionDiariaEditarSerializer,
     TurnoMedicoSerializer,
 )
 
@@ -149,6 +146,7 @@ class ResidenteDetailView(AuditLogMixin, APIView):
         serializer.save()
 
         # A3 - registrar
+        residente.refresh_from_db()
         self.audit_editar(request, antes, residente)
 
         return Response(serializer.data)
@@ -176,6 +174,7 @@ class ResidenteDetailView(AuditLogMixin, APIView):
         serializer.save()
 
         # A3 - registrar
+        residente.refresh_from_db()
         self.audit_editar(request, antes, residente)
 
         return Response(serializer.data)
@@ -219,7 +218,7 @@ class ResidenteEstadoView(AuditLogMixin, APIView):
 # ============================================================
 
 
-class ContactoEmergenciaView(APIView):
+class ContactoEmergenciaView(AuditLogMixin, APIView):
     """
     GET    /api/residentes/{id}/contactos/      → listar contactos
     POST   /api/residentes/{id}/contactos/      → crear contacto
@@ -227,6 +226,7 @@ class ContactoEmergenciaView(APIView):
     DELETE /api/residentes/{id}/contactos/{cid}/ → eliminar contacto
     """
 
+    audit_entidad = "contactos_emergencia"
     permission_classes = [IsAdminOrCuidador]
 
     def get(self, request, pk):
@@ -252,33 +252,63 @@ class ContactoEmergenciaView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        serializer.save(residente=residente)
+        contacto = serializer.save(residente=residente)
+
+        # AUDITORÍA: registrar creación de contacto
+        self.audit_crear(request, contacto)
+
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
-class ContactoEmergenciaDetailView(APIView):
+class ContactoEmergenciaDetailView(AuditLogMixin, APIView):
     """
     PATCH  /api/residentes/{id}/contactos/{cid}/
     DELETE /api/residentes/{id}/contactos/{cid}/
     """
 
+    audit_entidad = "contactos_emergencia"
     permission_classes = [IsAdminOrCuidador]
 
     def patch(self, request, pk, cid):
         residente = get_object_or_404(Residente, pk=pk)
         contacto = get_object_or_404(ContactoEmergencia, pk=cid, residente=residente)
+
+        # AUDITORÍA: snapshot ANTES de editar
+        antes = serializar_instancia(contacto)
+
         serializer = ContactoEmergenciaCreateSerializer(
             contacto, data=request.data, partial=True
         )
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         serializer.save()
+
+        # AUDITORÍA: registrar edición con snapshot antes/después
+        contacto.refresh_from_db()
+        self.audit_editar(request, antes, contacto)
+
         return Response(serializer.data)
 
     def delete(self, request, pk, cid):
         residente = get_object_or_404(Residente, pk=pk)
         contacto = get_object_or_404(ContactoEmergencia, pk=cid, residente=residente)
+
+        # AUDITORÍA: snapshot ANTES de borrar (es un borrado real)
+        antes = serializar_instancia(contacto)
+        contacto_pk = contacto.pk
+
         contacto.delete()
+
+        # AUDITORÍA: registrar eliminación de contacto
+        registrar_auditoria(
+            request=request,
+            accion="eliminar",
+            entidad_nombre=self.audit_entidad,
+            entidad_id=contacto_pk,
+            datos_anteriores=antes,
+            datos_nuevos=None,
+        )
+
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -287,12 +317,13 @@ class ContactoEmergenciaDetailView(APIView):
 # ============================================================
 
 
-class HistorialMedicoView(APIView):
+class HistorialMedicoView(AuditLogMixin, APIView):
     """
     GET   /api/residentes/{id}/historial/  → ver historial (T-26)
     PATCH /api/residentes/{id}/historial/  → editar historial (T-27)
     """
 
+    audit_entidad = "historial_medico"
     permission_classes = [IsAdminOrCuidador]
 
     def get(self, request, pk):
@@ -312,6 +343,9 @@ class HistorialMedicoView(APIView):
         residente = get_object_or_404(Residente, pk=pk)
         historial = get_object_or_404(HistorialMedico, residente=residente)
 
+        # AUDITORÍA: snapshot ANTES de editar (datos médicos sensibles)
+        antes = serializar_instancia(historial)
+
         serializer = HistorialMedicoSerializer(
             historial, data=request.data, partial=True
         )
@@ -321,6 +355,10 @@ class HistorialMedicoView(APIView):
         # Asignar automáticamente quién hizo la última edición
         serializer.save(actualizado_por=request.user)
 
+        # AUDITORÍA: registrar edición con snapshot antes/después
+        historial.refresh_from_db()
+        self.audit_editar(request, antes, historial)
+
         return Response(serializer.data)
 
 
@@ -328,45 +366,53 @@ class HistorialMedicoView(APIView):
 # T-30, T-31, T-32, T-33 — Observaciones diarias
 
 
-class ObservacionListCreateView(APIView):
+class ObservacionListCreateView(AuditLogMixin, APIView):
     """
     GET  /api/residentes/{id}/observaciones/         → lista paginada (T-32)
     POST /api/residentes/{id}/observaciones/         → crear (T-30)
     """
 
+    audit_entidad = "observaciones_diarias"
     permission_classes = [IsAdminOrCuidador]
 
     def get(self, request, pk):
         """
-        T-32: Lista ordenada de más reciente a más antigua.
-        Filtro opcional: ?fecha=YYYY-MM-DD
+        Lista de más reciente a más antigua, paginada.
+        Filtros: ?fecha=YYYY-MM-DD  ?buscar=texto  ?page=  ?page_size=
         """
         residente = get_object_or_404(Residente, pk=pk)
-        queryset = ObservacionDiaria.objects.filter(residente=residente).select_related(
-            "registrado_por"
-        )  # Evita N+1 queries
+        queryset = ObservacionDiaria.objects.filter(
+            residente=residente
+        ).select_related("registrado_por")
 
-        # Filtro por fecha específica
         fecha = request.query_params.get("fecha")
         if fecha:
             queryset = queryset.filter(fecha_hora__date=fecha)
 
-        # Paginación
+        # Búsqueda en el contenido
+        buscar = request.query_params.get("buscar")
+        if buscar:
+            queryset = queryset.filter(
+                models.Q(estado_fisico__icontains=buscar)
+                | models.Q(estado_emocional__icontains=buscar)
+            )
+
         page = int(request.query_params.get("page", 1))
-        page_size = 20
+        page_size = int(request.query_params.get("page_size", 10))
+        page_size = min(max(page_size, 1), 200)
         start = (page - 1) * page_size
         end = start + page_size
         total = queryset.count()
 
         serializer = ObservacionDiariaSerializer(queryset[start:end], many=True)
-        return Response(
-            {
-                "total": total,
-                "page": page,
-                "pages": (total + page_size - 1) // page_size,
-                "results": serializer.data,
-            }
-        )
+        return Response({
+            "count": total,
+            "total": total,
+            "page": page,
+            "pages": (total + page_size - 1) // page_size,
+            "page_size": page_size,
+            "results": serializer.data,
+        })
 
     def post(self, request, pk):
         """
@@ -379,19 +425,27 @@ class ObservacionListCreateView(APIView):
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        serializer.save(
+        observacion = serializer.save(
             residente=residente,
             registrado_por=request.user,
             # fecha_hora NO se pasa — auto_now_add lo genera solo
         )
+
+        # AUDITORÍA: registrar creación de observación
+        self.audit_crear(request, observacion)
+
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
-class ObservacionDetailView(APIView):
+class ObservacionDetailView(AuditLogMixin, APIView):
     """
-    GET /api/residentes/{id}/observaciones/{obs_id}/  → detalle (ST-31)
+    GET   /api/residentes/{id}/observaciones/{obs_id}/  → detalle (ST-31)
+    PATCH /api/residentes/{id}/observaciones/{obs_id}/  → editar contenido
+    Regla: solo el autor de la observación o un administrador pueden editar.
+    La fecha y el autor NO cambian nunca.
     """
 
+    audit_entidad = "observaciones_diarias"
     permission_classes = [IsAdminOrCuidador]
 
     def get(self, request, pk, obs_id):
@@ -402,31 +456,63 @@ class ObservacionDetailView(APIView):
         serializer = ObservacionDiariaSerializer(observacion)
         return Response(serializer.data)
 
+    def patch(self, request, pk, obs_id):
+        residente = get_object_or_404(Residente, pk=pk)
+        observacion = get_object_or_404(
+            ObservacionDiaria, pk=obs_id, residente=residente
+        )
 
-# ── T-35, T-36, T-37, T-38 — Turnos médicos ───────────────
+        if observacion.registrado_por_id != request.user.id:
+            return Response(
+                {"error": "Solo puedes editar tus propias observaciones."},
+             status=status.HTTP_403_FORBIDDEN,
+        )
 
+        # Regla de autoría: solo el autor o el admin pueden editar
+        es_autor = observacion.registrado_por_id == request.user.id
+        if not (es_autor or request.user.es_administrador):
+            return Response(
+                {"error": "Solo el autor de la observación o el administrador pueden editarla."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
-class TurnoMedicoListCreateView(APIView):
+        # AUDITORÍA: snapshot ANTES de editar
+        antes = serializar_instancia(observacion)
+
+        serializer = ObservacionDiariaEditarSerializer(
+            observacion, data=request.data, partial=True
+        )
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer.save()  # NO se pasa registrado_por ni fecha_hora → quedan intactos
+
+        # AUDITORÍA: registrar edición con snapshot antes/después
+        observacion.refresh_from_db()
+        self.audit_editar(request, antes, observacion)
+
+        # Devolvemos el objeto completo (con autor y fecha) para refrescar la UI
+        return Response(ObservacionDiariaSerializer(observacion).data)
+
+class TurnoMedicoListCreateView(AuditLogMixin, APIView):
     """
-    GET  /api/residentes/{id}/turnos/  → listar turnos (T-36)
-    POST /api/residentes/{id}/turnos/  → crear turno   (T-35)
+    GET  /api/residentes/{id}/turnos/  → listar turnos (paginado, filtros)
+    POST /api/residentes/{id}/turnos/  → crear turno (solo admin)
     """
 
+    audit_entidad = "turnos_medicos"
     permission_classes = [IsAdminOrCuidador]
 
     def get(self, request, pk):
         """
-        T-36, T-37, T-38: Lista con filtros opcionales.
-        ?tipo_consulta=urgencia
-        ?fecha_desde=YYYY-MM-DD
-        ?fecha_hasta=YYYY-MM-DD
+        Filtros: ?tipo_consulta=  ?fecha_desde=  ?fecha_hasta=  ?buscar=
+        Paginación: ?page=  ?page_size=
         """
         residente = get_object_or_404(Residente, pk=pk)
         queryset = TurnoMedico.objects.filter(residente=residente).select_related(
             "registrado_por"
         )
 
-        # T-37: filtro por tipo_consulta — valida que sea un valor válido
         tipo = request.query_params.get("tipo_consulta")
         if tipo:
             tipos_validos = [t[0] for t in TurnoMedico.TipoConsulta.choices]
@@ -437,20 +523,36 @@ class TurnoMedicoListCreateView(APIView):
                 )
             queryset = queryset.filter(tipo_consulta=tipo)
 
-        # T-38: filtros por rango de fechas
         fecha_desde = request.query_params.get("fecha_desde")
         fecha_hasta = request.query_params.get("fecha_hasta")
-
         if fecha_desde:
             queryset = queryset.filter(fecha_hora__date__gte=fecha_desde)
         if fecha_hasta:
             queryset = queryset.filter(fecha_hora__date__lte=fecha_hasta)
 
-        serializer = TurnoMedicoSerializer(queryset, many=True)
-        return Response(serializer.data)
+        buscar = request.query_params.get("buscar")
+        if buscar:
+            queryset = queryset.filter(observaciones__icontains=buscar)
+
+        page = int(request.query_params.get("page", 1))
+        page_size = int(request.query_params.get("page_size", 10))
+        page_size = min(max(page_size, 1), 200)
+        start = (page - 1) * page_size
+        end = start + page_size
+        total = queryset.count()
+
+        serializer = TurnoMedicoSerializer(queryset[start:end], many=True)
+        return Response({
+            "count": total,
+            "total": total,
+            "page": page,
+            "pages": (total + page_size - 1) // page_size,
+            "page_size": page_size,
+            "results": serializer.data,
+        })
 
     def post(self, request, pk):
-        """T-35: Crear turno médico. Solo admin puede registrar."""
+        """Crear turno médico. Solo admin."""
         if not request.user.es_administrador:
             return Response(
                 {"error": "Solo el Administrador puede registrar turnos médicos."},
@@ -459,9 +561,102 @@ class TurnoMedicoListCreateView(APIView):
 
         residente = get_object_or_404(Residente, pk=pk)
         serializer = TurnoMedicoSerializer(data=request.data)
-
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        serializer.save(residente=residente, registrado_por=request.user)
+        turno = serializer.save(residente=residente, registrado_por=request.user)
+
+        # AUDITORÍA: registrar creación de turno médico
+        self.audit_crear(request, turno)
+
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+class TurnoMedicoDetailView(AuditLogMixin, APIView):
+    """
+    GET   /api/residentes/{id}/turnos/{turno_id}/  → detalle
+    PATCH /api/residentes/{id}/turnos/{turno_id}/  → editar (solo admin)
+    """
+
+    audit_entidad = "turnos_medicos"
+    permission_classes = [IsAdminOrCuidador]
+
+    def get(self, request, pk, turno_id):
+        residente = get_object_or_404(Residente, pk=pk)
+        turno = get_object_or_404(TurnoMedico, pk=turno_id, residente=residente)
+        return Response(TurnoMedicoSerializer(turno).data)
+
+    def patch(self, request, pk, turno_id):
+        residente = get_object_or_404(Residente, pk=pk)
+        turno = get_object_or_404(TurnoMedico, pk=turno_id, residente=residente)
+
+        # Solo admin puede tocar turnos, y solo si es el autor del turno
+        if not request.user.es_administrador:
+            return Response(
+                {"error": "Solo el Administrador puede editar turnos médicos."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if turno.registrado_por_id != request.user.id:
+            return Response(
+                {"error": "Solo puedes editar los turnos que tú registraste."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # AUDITORÍA: snapshot ANTES de editar
+        antes = serializar_instancia(turno)
+
+        serializer = TurnoMedicoSerializer(turno, data=request.data, partial=True)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        serializer.save()
+
+        # AUDITORÍA: registrar edición con snapshot antes/después
+        turno.refresh_from_db()
+        self.audit_editar(request, antes, turno)
+
+        return Response(serializer.data)
+
+
+class ResumenDashboardResidentesView(APIView):
+    """
+    GET /api/residentes/resumen-dashboard/
+    Métricas y listas de residentes para la sección del dashboard.
+    """
+    permission_classes = [IsAdminOrCuidador]
+
+    def get(self, request):
+        hoy = date.today()
+
+        activos        = Residente.objects.filter(estado=Residente.Estado.ACTIVO)
+        hospitalizados = Residente.objects.filter(estado=Residente.Estado.HOSPITALIZADO)
+        dados_de_alta  = Residente.objects.filter(estado=Residente.Estado.DADO_DE_ALTA)
+
+        # Ingresos del mes actual (residentes que ingresaron este mes)
+        ingresos_mes = Residente.objects.filter(
+            fecha_ingreso__year=hoy.year,
+            fecha_ingreso__month=hoy.month,
+        )
+
+        def serializar(qs):
+            # Lista ligera: nombre completo + dato extra
+            return [
+                {
+                    "nombre": f"{r.nombre} {r.apellido}",
+                    "dni": r.dni,
+                    "ingreso": r.fecha_ingreso.isoformat(),
+                }
+                for r in qs.order_by("apellido", "nombre")
+            ]
+
+        return Response({
+            "activos_count":        activos.count(),
+            "hospitalizados_count": hospitalizados.count(),
+            "dados_de_alta_count":  dados_de_alta.count(),
+            "ingresos_mes_count":   ingresos_mes.count(),
+            "total":                Residente.objects.count(),
+
+            "activos_lista":        serializar(activos),
+            "hospitalizados_lista": serializar(hospitalizados),
+            "dados_de_alta_lista":  serializar(dados_de_alta),
+            "ingresos_mes_lista":   serializar(ingresos_mes),
+        })

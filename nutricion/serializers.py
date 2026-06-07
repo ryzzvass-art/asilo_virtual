@@ -6,6 +6,8 @@ from .models import (
     ResidenteRestriccion,
     PlanNutricional,
     ComidaDiaria,
+    PlantillaNutricional,   
+    ComidaPlantilla,
 )
 
 # ── T-59, T-60 — Catálogo de Restricciones ────────────────
@@ -31,6 +33,17 @@ class CatalogoRestriccionSerializer(serializers.ModelSerializer):
 
     def get_creado_por_nombre(self, obj):
         return f"{obj.creado_por.nombre} {obj.creado_por.apellido}"
+
+    def validate_nombre(self, value):
+        nombre = value.strip()
+        qs = CatalogoRestriccion.objects.filter(nombre__iexact=nombre)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError(
+                f"Ya existe una restricción con el nombre '{nombre}'."
+            )
+        return nombre
 
 
 # ── T-61, T-62 — Catálogo de Alimentos ────────────────────
@@ -69,6 +82,17 @@ class CatalogoAlimentoSerializer(serializers.ModelSerializer):
         if obj.revisado_por:
             return f"{obj.revisado_por.nombre} {obj.revisado_por.apellido}"
         return None
+
+    def validate_nombre(self, value):
+        nombre = value.strip()
+        qs = CatalogoAlimento.objects.filter(nombre__iexact=nombre)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError(
+                f"Ya existe un alimento con el nombre '{nombre}'."
+            )
+        return nombre
 
     def get_restricciones_que_viola(self, obj):
         """Lista de restricciones que viola este alimento."""
@@ -267,5 +291,141 @@ class ComidaDiariaSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 f"El alimento '{value.nombre}' no está activo "
                 f"(estado actual: {value.estado}). Solo se pueden asignar alimentos activos."
+            )
+        return value
+# ── Fase 2: Plantillas Nutricionales ──────────────────────
+
+
+class ComidaPlantillaSerializer(serializers.ModelSerializer):
+    alimento_nombre = serializers.SerializerMethodField()
+    alimento_grupo  = serializers.SerializerMethodField()
+
+    class Meta:
+        model  = ComidaPlantilla
+        fields = [
+            "id",
+            "tipo_comida",
+            "alimento",
+            "alimento_nombre",
+            "alimento_grupo",
+            "descripcion_menu",
+        ]
+
+    def get_alimento_nombre(self, obj):
+        return obj.alimento.nombre
+
+    def get_alimento_grupo(self, obj):
+        return obj.alimento.grupo_alimentario
+
+    def validate_alimento(self, value):
+        if value.estado != "activo":
+            raise serializers.ValidationError(
+                f"El alimento '{value.nombre}' no está activo."
+            )
+        return value
+
+class PlantillaNutricionalSerializer(serializers.ModelSerializer):
+    comidas           = ComidaPlantillaSerializer(many=True)
+    creado_por_nombre = serializers.SerializerMethodField()
+    aprobado_por_nombre = serializers.SerializerMethodField()
+
+    class Meta:
+        model  = PlantillaNutricional
+        fields = [
+            "id",
+            "nombre",
+            "tipo_dieta",
+            "observaciones",
+            "fecha_menu",
+            "estado",
+            "creado_por",
+            "creado_por_nombre",
+            "aprobado_por",
+            "aprobado_por_nombre",
+            "motivo_rechazo",
+            "comidas",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "estado",
+            "creado_por",
+            "creado_por_nombre",
+            "aprobado_por",
+            "aprobado_por_nombre",
+            "motivo_rechazo",
+            "created_at",
+            "updated_at",
+        ]
+
+    def get_creado_por_nombre(self, obj):
+        return f"{obj.creado_por.nombre} {obj.creado_por.apellido}"
+
+    def get_aprobado_por_nombre(self, obj):
+        if obj.aprobado_por:
+            return f"{obj.aprobado_por.nombre} {obj.aprobado_por.apellido}"
+        return None
+
+    def validate_nombre(self, value):
+        nombre = value.strip()
+        # Unicidad solo contra planes vigentes (pendientes/aprobados).
+        # Un nombre liberado por rechazo puede reutilizarse.
+        qs = PlantillaNutricional.objects.filter(
+            nombre__iexact=nombre
+        ).exclude(estado="rechazado")
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError(
+                f"Ya existe un plan nutricional con el nombre '{nombre}'."
+            )
+        return nombre
+
+    def validate_comidas(self, value):
+        TIPOS_REQUERIDOS = {"desayuno", "almuerzo", "merienda", "cena"}
+        if not value:
+            raise serializers.ValidationError(
+                "La plantilla debe incluir las 4 comidas: desayuno, almuerzo, merienda y cena."
+            )
+        tipos_enviados = {c["tipo_comida"] for c in value}
+        faltantes = TIPOS_REQUERIDOS - tipos_enviados
+        if faltantes:
+            raise serializers.ValidationError(
+                f"Faltan las siguientes comidas: {', '.join(sorted(faltantes))}. "
+                "La plantilla debe incluir desayuno, almuerzo, merienda y cena."
+            )
+        return value
+
+    def create(self, validated_data):
+        comidas_data = validated_data.pop("comidas")
+        plantilla = PlantillaNutricional.objects.create(**validated_data)
+        for comida in comidas_data:
+            ComidaPlantilla.objects.create(plantilla=plantilla, **comida)
+        return plantilla
+
+
+class RechazarPlantillaSerializer(serializers.Serializer):
+    motivo_rechazo = serializers.CharField(min_length=10)
+
+
+class AsignarPlantillaSerializer(serializers.Serializer):
+    """
+    Paso 1: solo recibe plantilla_id y fecha_inicio.
+    El backend responde con conflictos + sugerencias sin guardar.
+    Paso 2: recibe además reemplazos resueltos y guarda.
+    """
+    plantilla_id  = serializers.IntegerField()
+    fecha_inicio  = serializers.DateField()
+    # Lista opcional de reemplazos: [{comida_plantilla_id, alimento_id}]
+    reemplazos    = serializers.ListField(
+        child=serializers.DictField(), required=False, default=list
+    )
+
+    def validate_plantilla_id(self, value):
+        try:
+            plantilla = PlantillaNutricional.objects.get(pk=value, estado="aprobado")
+        except PlantillaNutricional.DoesNotExist:
+            raise serializers.ValidationError(
+                "Plantilla no encontrada o no está aprobada."
             )
         return value

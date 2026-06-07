@@ -13,6 +13,7 @@ class Actividad(models.Model):
         FISIOTERAPIA = "fisioterapia", "Fisioterapia"
         CUMPLEANOS = "cumpleanos", "Cumpleaños"
         RECREATIVA = "recreativa", "Recreativa"
+        DEPORTIVO = "deportivo", "Deportivo"
         OTRO = "otro", "Otro"
 
     class Estado(models.TextChoices):
@@ -27,11 +28,14 @@ class Actividad(models.Model):
     )
     nombre = models.CharField(max_length=200)
     tipo = models.CharField(max_length=20, choices=Tipo.choices)
-    responsable = models.CharField(max_length=150)  # Nombre del profesional a cargo
+    tipo_otro = models.CharField(max_length=100, blank=True, default="")
+    responsable = models.CharField(max_length=150)  
     fecha_hora = models.DateTimeField()
     estado = models.CharField(
         max_length=20, choices=Estado.choices, default=Estado.PROGRAMADA
     )
+    observaciones = models.TextField(blank=True, default="")
+
 
     class Meta:
         db_table = "actividades"

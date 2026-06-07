@@ -10,7 +10,7 @@ from .models import ObservacionDiaria, TurnoMedico
 class ContactoEmergenciaSerializer(serializers.ModelSerializer):
     class Meta:
         model = ContactoEmergencia
-        fields = ["id", "tipo", "nombre", "relacion_cargo", "telefono", "email"]
+        fields = ["id", "tipo", "nombre","dni", "relacion_cargo", "telefono", "email"]
 
 
 class ResidenteSerializer(serializers.ModelSerializer):
@@ -95,6 +95,7 @@ class ResidenteDetalleSerializer(serializers.ModelSerializer):
                 "diagnosticos": h.diagnosticos,
                 "alergias": h.alergias,
                 "condiciones_cronicas": h.condiciones_cronicas,
+                "tratamiento": h.tratamiento,
                 "updated_at": h.updated_at,
             }
         except HistorialMedico.DoesNotExist:
@@ -107,14 +108,19 @@ class ResidenteDetalleSerializer(serializers.ModelSerializer):
 
 
 class ResidenteEditarSerializer(serializers.ModelSerializer):
-    """
-    Para edición parcial o total. No permite cambiar el DNI
-    una vez registrado (campo protegido).
-    """
+    dni = serializers.CharField(validators=[])  # ← desactiva el UniqueValidator automático de DRF
 
     class Meta:
         model = Residente
-        fields = ["nombre", "apellido", "fecha_nacimiento", "fecha_ingreso"]
+        fields = ["nombre", "apellido", "dni", "fecha_nacimiento", "fecha_ingreso"]
+
+    def validate_dni(self, value):
+        qs = Residente.objects.filter(dni=value)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError("Ya existe un residente con este C.I.")
+        return value
 
 
 class CambiarEstadoResidenteSerializer(serializers.Serializer):
@@ -129,7 +135,7 @@ class CambiarEstadoResidenteSerializer(serializers.Serializer):
 class ContactoEmergenciaCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = ContactoEmergencia
-        fields = ["tipo", "nombre", "relacion_cargo", "telefono", "email"]
+        fields = ["tipo", "nombre","dni", "relacion_cargo", "telefono", "email"]
 
     def validate_tipo(self, value):
         # Verificar que el tipo sea válido
@@ -161,6 +167,7 @@ class HistorialMedicoSerializer(serializers.ModelSerializer):
             "diagnosticos",
             "alergias",
             "condiciones_cronicas",
+            "tratamiento",
             "actualizado_por",
             "actualizado_por_nombre",
             "created_at",
@@ -242,3 +249,15 @@ class TurnoMedicoSerializer(serializers.ModelSerializer):
                 f"Tipo inválido. Opciones: {tipos_validos}"
             )
         return value
+# ── Edición de observación: solo contenido, nunca fecha ni autor ──
+
+class ObservacionDiariaEditarSerializer(serializers.ModelSerializer):
+    """
+    Para PATCH de una observación existente.
+    Solo permite corregir el contenido. fecha_hora, registrado_por
+    y residente quedan intactos (no están en fields).
+    """
+
+    class Meta:
+        model = ObservacionDiaria
+        fields = ["estado_fisico", "estado_emocional"]

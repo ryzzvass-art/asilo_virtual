@@ -12,19 +12,23 @@ from .views import (
     AdministracionCreateView,
     AdministracionDetailView,
     AdministracionHistorialView,
+    MovimientoStockHistorialView,
+    MedicamentosResumenDashboardView
 )
 
 urlpatterns = [
-    # ── Catálogo de medicamentos ────────────────────────────
-    # GET  /api/medicamentos/              → listar (todos los roles)
-    # POST /api/medicamentos/              → crear (solo Admin)
+    
+    path(
+        "medicamentos/resumen-dashboard/",
+        MedicamentosResumenDashboardView.as_view(),
+        name="medicamentos-resumen-dashboard",
+    ),
     path(
         "medicamentos/",
         MedicamentoListCreateView.as_view(),
         name="medicamento-list-create",
     ),
-    # GET        /api/medicamentos/{id}/   → detalle
-    # PATCH      /api/medicamentos/{id}/   → editar (solo Admin)
+    
     path(
         "medicamentos/<int:pk>/",
         MedicamentoDetailView.as_view(),
@@ -49,6 +53,11 @@ urlpatterns = [
         "medicamentos/<int:pk>/stock/<int:lote_id>/",
         StockDetailView.as_view(),
         name="stock-detail",
+    ),
+       path(
+        "medicamentos/<int:pk>/movimientos/",
+        MovimientoStockHistorialView.as_view(),
+        name="movimiento-historial",
     ),
     # ── Alertas ─────────────────────────────────────────────
     # GET /api/alertas/stock/  → lotes con alertas activas

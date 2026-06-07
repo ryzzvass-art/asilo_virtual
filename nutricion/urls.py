@@ -9,10 +9,20 @@ from .views import (
     AlimentoRestriccionView,
     ResidenteRestriccionView,
     ResidenteRestriccionRevocarView,
-    PlanListCreateView,
+    PlanListView,
     PlanDetailView,
     ComidaListCreateView,
     ComidaDetailView,
+    PlantillaListCreateView,    
+    PlantillaDetailView,        
+    PlantillaAprobarView,       
+    PlantillaRechazarView,      
+    AsignarPlantillaView,
+    PlantillaEditarView,
+    AlimentoArchivarView,
+    RestriccionActivarView,
+    NutricionResumenView,
+    PlantillaAsignadosView
 )
 
 urlpatterns = [
@@ -62,25 +72,74 @@ urlpatterns = [
         ResidenteRestriccionRevocarView.as_view(),
         name="residente-restriccion-revocar",
     ),
-    # GET  /api/residentes/{id}/planes/  → listar todos (T-75)
-    # POST /api/residentes/{id}/planes/  → crear con versionado (T-69)
+    path(
+    'restricciones/<int:pk>/activar/',
+    RestriccionActivarView.as_view(),
+    name='restriccion-activar',
+    ),
+    # ── Planes del residente (legacy) ───────────────────────
     path(
         "residentes/<int:pk>/planes/",
-        PlanListCreateView.as_view(),
+        PlanListView.as_view(),
         name="plan-list-create",
     ),
-    # GET /api/planes/{id}/  → detalle con comidas (T-76)
+    # ── Asignar plantilla aprobada a residente (nuevo) ──────
+    path(
+        "residentes/<int:pk>/planes/asignar/",
+        AsignarPlantillaView.as_view(),
+        name="plan-asignar-plantilla",
+    ),
+    # ── Detalle y comidas de un plan ────────────────────────
     path("planes/<int:plan_id>/", PlanDetailView.as_view(), name="plan-detail"),
-    # GET  /api/planes/{id}/comidas/  → listar con filtros (T-72)
-    # POST /api/planes/{id}/comidas/  → registrar con verificación RF-25 (T-74)
     path(
         "planes/<int:plan_id>/comidas/",
         ComidaListCreateView.as_view(),
         name="comida-list-create",
     ),
     path(
-    "comidas/<int:comida_id>/",
-    ComidaDetailView.as_view(),
-    name="comida-detail",
+        "comidas/<int:comida_id>/",
+        ComidaDetailView.as_view(),
+        name="comida-detail",
+    ),
+    # ── Plantillas Nutricionales (nuevo) ────────────────────
+    path(
+        "plantillas/",
+        PlantillaListCreateView.as_view(),
+        name="plantilla-list-create",
+    ),
+    path(
+        "plantillas/<int:pk>/",
+        PlantillaDetailView.as_view(),
+        name="plantilla-detail",
+    ),
+    path(
+        "plantillas/<int:pk>/asignados/",
+        PlantillaAsignadosView.as_view(),
+        name="plantilla-asignados",
+    ),
+    path(
+        "plantillas/<int:pk>/aprobar/",
+        PlantillaAprobarView.as_view(),
+        name="plantilla-aprobar",
+    ),
+    path(
+        "plantillas/<int:pk>/rechazar/",
+        PlantillaRechazarView.as_view(),
+        name="plantilla-rechazar",
+    ),
+    path(
+    'plantillas/<int:pk>/editar/',
+    PlantillaEditarView.as_view(),
+    name='plantilla-editar',
+    ),
+    path(
+    'alimentos/<int:pk>/archivar/',
+    AlimentoArchivarView.as_view(),
+    name='alimento-archivar',
+    ),
+    path(
+        'nutricion/resumen-dashboard/',
+        NutricionResumenView.as_view(),
+        name='nutricion-resumen-dashboard',
     ),
 ]

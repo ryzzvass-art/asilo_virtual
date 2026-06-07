@@ -3,13 +3,6 @@ from django.conf import settings
 
 
 class CatalogoRestriccion(models.Model):
-    """
-    Catálogo de restricciones alimentarias.
-    Solo el Administrador lo gestiona.
-    severidad='obligatorio' bloquea con confirmación explícita.
-    severidad='recomendado' genera advertencia.
-    """
-
     class Severidad(models.TextChoices):
         OBLIGATORIO = "obligatorio", "Obligatorio"
         RECOMENDADO = "recomendado", "Recomendado"
@@ -18,15 +11,11 @@ class CatalogoRestriccion(models.Model):
         ACTIVO = "activo", "Activo"
         ARCHIVADO = "archivado", "Archivado"
 
-    nombre = models.CharField(max_length=150)  # sin azúcar, bajo en sodio, etc.
+    nombre = models.CharField(max_length=150)
     descripcion = models.TextField(blank=True, default="")
-    condiciones_asociadas = models.CharField(
-        max_length=255, blank=True, default=""
-    )  # Diabetes, Hipertensión, etc.
+    condiciones_asociadas = models.CharField(max_length=255, blank=True, default="")
     severidad = models.CharField(max_length=20, choices=Severidad.choices)
-    estado = models.CharField(
-        max_length=20, choices=Estado.choices, default=Estado.ACTIVO
-    )
+    estado = models.CharField(max_length=20, choices=Estado.choices, default=Estado.ACTIVO)
     creado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
@@ -46,28 +35,18 @@ class CatalogoRestriccion(models.Model):
 
 
 class CatalogoAlimento(models.Model):
-    """
-    Catálogo de alimentos disponibles para los menús.
-    Nuevo alimento inicia con estado='pendiente'.
-    Solo activos aparecen en los menús.
-    Solo el Admin puede activar un alimento (revisado_por).
-    """
-
     class Estado(models.TextChoices):
         PENDIENTE = "pendiente", "Pendiente de revisión"
         ACTIVO = "activo", "Activo"
         ARCHIVADO = "archivado", "Archivado"
 
     nombre = models.CharField(max_length=200)
-    grupo_alimentario = models.CharField(
-        max_length=100
-    )  # cereal, proteína, lácteo, vegetal, postre, etc.
+    grupo_alimentario = models.CharField(max_length=100)
     estado = models.CharField(
         max_length=20,
         choices=Estado.choices,
-        default=Estado.PENDIENTE,  # Siempre inicia pendiente
+        default=Estado.PENDIENTE,
     )
-    # null=True porque al crear aún no tiene revisor
     revisado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -78,22 +57,16 @@ class CatalogoAlimento(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        db_table = "catalogo_alimentos"
-        indexes = [
-            models.Index(fields=["estado"], name="idx_alimentos_estado"),
-        ]
-
+       db_table = "catalogo_alimentos"
+       ordering = ["-created_at"]
+       indexes = [
+        models.Index(fields=["estado"], name="idx_alimentos_estado"),
+    ]
     def __str__(self):
         return f"{self.nombre} ({self.grupo_alimentario})"
 
 
 class AlimentoRestriccion(models.Model):
-    """
-    Tabla N:M — qué restricciones viola cada alimento.
-    Corazón de la verificación RF-25.
-    PK compuesta (alimento_id, restriccion_id). Sin campos adicionales.
-    """
-
     alimento = models.ForeignKey(
         CatalogoAlimento,
         on_delete=models.CASCADE,
@@ -107,19 +80,13 @@ class AlimentoRestriccion(models.Model):
 
     class Meta:
         db_table = "alimento_restricciones"
-        unique_together = [("alimento", "restriccion")]  # PK compuesta
+        unique_together = [("alimento", "restriccion")]
 
     def __str__(self):
         return f"{self.alimento} viola → {self.restriccion}"
 
 
 class ResidenteRestriccion(models.Model):
-    """
-    Restricciones activas de cada residente.
-    NINGUNA se activa sin confirmación humana explícita (RF-22-C).
-    confirmado_por no puede ser null.
-    """
-
     class Estado(models.TextChoices):
         ACTIVA = "activa", "Activa"
         REVOCADA = "revocada", "Revocada"
@@ -134,7 +101,6 @@ class ResidenteRestriccion(models.Model):
         on_delete=models.CASCADE,
         related_name="residentes_con_restriccion",
     )
-    # confirmado_por nunca puede ser null — regla de negocio RF-22-C
     confirmado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
@@ -147,19 +113,122 @@ class ResidenteRestriccion(models.Model):
 
     class Meta:
         db_table = "residente_restricciones"
-        unique_together = [
-            ("residente", "restriccion")
-        ]  # Una restricción por residente
+        unique_together = [("residente", "restriccion")]
 
     def __str__(self):
         return f"{self.residente} — {self.restriccion} ({self.estado})"
 
 
-# SPRINT 7 — T-68, T-70
+# ── NUEVO: Plantilla Nutricional reutilizable ──────────────
+
+
+class PlantillaNutricional(models.Model):
+    """
+    Plantilla reutilizable de plan nutricional.
+    No está atada a ningún residente.
+    Flujo: pendiente → aprobado / rechazado.
+    La crea cualquier usuario (Admin o Cuidador).
+    Solo el Admin aprueba o rechaza.
+    """
+
+    class Estado(models.TextChoices):
+        PENDIENTE = "pendiente", "Pendiente de aprobación"
+        APROBADO = "aprobado", "Aprobado"
+        RECHAZADO = "rechazado", "Rechazado"
+
+    class TipoDieta(models.TextChoices):
+        BLANDA = "blanda", "Blanda"
+        HIPOCALORICA = "hipocalorica", "Hipocalórica"
+        NORMAL = "normal", "Normal"
+        DIABETICA = "diabetica", "Diabética"
+        HIPOSODICA = "hiposodica", "Hiposódica"
+        OTRO = "otro", "Otro"
+
+    nombre = models.CharField(max_length=200)
+    tipo_dieta = models.CharField(max_length=20, choices=TipoDieta.choices)
+    observaciones = models.TextField(blank=True, default="")
+    fecha_menu = models.DateField()
+    estado = models.CharField(
+        max_length=20,
+        choices=Estado.choices,
+        default=Estado.PENDIENTE,
+    )
+
+    creado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="plantillas_creadas",
+    )
+    # Solo se rellena al aprobar o rechazar
+    aprobado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="plantillas_aprobadas",
+    )
+    motivo_rechazo = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "plantillas_nutricionales"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["estado"], name="idx_plantillas_estado"),
+        ]
+
+    def __str__(self):
+        return f"{self.nombre} ({self.tipo_dieta}) — {self.estado}"
+
+
+class ComidaPlantilla(models.Model):
+    """
+    Comidas base que forman parte de una PlantillaNutricional.
+    No tienen fecha ni residente — son la definición genérica.
+    Al asignar la plantilla a un residente, estas comidas
+    se COPIAN a ComidaDiaria del plan asignado.
+    """
+
+    class TipoComida(models.TextChoices):
+        DESAYUNO = "desayuno", "Desayuno"
+        ALMUERZO = "almuerzo", "Almuerzo"
+        MERIENDA = "merienda", "Merienda"
+        CENA = "cena", "Cena"
+
+    plantilla = models.ForeignKey(
+        PlantillaNutricional,
+        on_delete=models.CASCADE,
+        related_name="comidas",
+    )
+    tipo_comida = models.CharField(max_length=20, choices=TipoComida.choices)
+    alimento = models.ForeignKey(
+        CatalogoAlimento,
+        on_delete=models.PROTECT,
+        related_name="en_plantillas",
+    )
+    descripcion_menu = models.TextField(blank=True, default="")
+
+    class Meta:
+        db_table = "comidas_plantilla"
+        ordering = ["tipo_comida"]
+
+    def __str__(self):
+        return f"{self.tipo_comida} — {self.alimento} (plantilla: {self.plantilla.nombre})"
+
+
+# ── Plan Nutricional asignado a residente (evolución) ─────
+
+
 class PlanNutricional(models.Model):
     """
-    Plan nutricional con versionado — solo uno vigente por residente.
-    Al crear plan nuevo, el anterior se archiva automáticamente (RF-26).
+    Plan nutricional asignado a un residente específico.
+    Puede originarse de una PlantillaNutricional aprobada
+    (plantilla_origen) o crearse directamente (legacy / null).
+
+    Estados:
+    - vigente:   plan activo del residente
+    - archivado: reemplazado por uno más nuevo
     """
 
     class Estado(models.TextChoices):
@@ -184,10 +253,18 @@ class PlanNutricional(models.Model):
         on_delete=models.PROTECT,
         related_name="planes_creados",
     )
+    # Nullable: planes legacy (creados antes de este cambio) no tienen plantilla origen
+    plantilla_origen = models.ForeignKey(
+        PlantillaNutricional,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="planes_asignados",
+    )
     tipo_dieta = models.CharField(max_length=20, choices=TipoDieta.choices)
     observaciones = models.TextField(blank=True, default="")
     fecha_inicio = models.DateField()
-    fecha_fin = models.DateField(null=True, blank=True)  # null = plan vigente
+    fecha_fin = models.DateField(null=True, blank=True)
     estado = models.CharField(
         max_length=20, choices=Estado.choices, default=Estado.VIGENTE
     )
@@ -203,8 +280,9 @@ class PlanNutricional(models.Model):
 
 class ComidaDiaria(models.Model):
     """
-    Comidas asignadas por día en un plan nutricional.
-    Al guardar se verifica RF-25: alimento vs restricciones activas del residente.
+    Comidas asignadas por día en un plan nutricional de un residente.
+    Pueden venir copiadas de una ComidaPlantilla (al asignar)
+    o agregadas manualmente después.
     """
 
     class TipoComida(models.TextChoices):

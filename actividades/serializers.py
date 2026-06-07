@@ -12,9 +12,11 @@ class ActividadSerializer(serializers.ModelSerializer):
             "id",
             "nombre",
             "tipo",
+            "tipo_otro",
             "responsable",
             "fecha_hora",
             "estado",
+            "observaciones",
             "creado_por",
             "creado_por_nombre",
             "total_participantes",
@@ -23,6 +25,7 @@ class ActividadSerializer(serializers.ModelSerializer):
             "creado_por",
             "creado_por_nombre",
             "estado",
+            "observaciones",
             "total_participantes",
         ]
 
@@ -31,6 +34,19 @@ class ActividadSerializer(serializers.ModelSerializer):
 
     def get_total_participantes(self, obj):
         return obj.participantes.count()
+
+    def validate(self, data):
+        # Si el tipo es "otro", tipo_otro es obligatorio
+        tipo = data.get("tipo", getattr(self.instance, "tipo", None))
+        tipo_otro = data.get("tipo_otro", getattr(self.instance, "tipo_otro", ""))
+        if tipo == "otro" and not (tipo_otro or "").strip():
+            raise serializers.ValidationError(
+                {"tipo_otro": "Debe especificar el tipo de actividad."}
+            )
+        # Si el tipo NO es "otro", limpiamos tipo_otro para no dejar basura
+        if tipo != "otro":
+            data["tipo_otro"] = ""
+        return data
 
 
 class ActividadResidenteSerializer(serializers.ModelSerializer):

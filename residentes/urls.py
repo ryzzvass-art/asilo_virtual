@@ -1,7 +1,3 @@
-# ============================================================
-# SPRINT 2 — URLs
-# Archivo NUEVO: residentes/urls.py
-# ============================================================
 
 from django.urls import path
 from .views import (
@@ -14,21 +10,21 @@ from .views import (
     ObservacionListCreateView,
     ObservacionDetailView,
     TurnoMedicoListCreateView,
+    TurnoMedicoDetailView,
+    ResumenDashboardResidentesView, 
 )
 
 urlpatterns = [
-    # ── Residentes ──────────────────────────────────────────
-    # GET  /api/residentes/        → listar con filtros (T-20)
-    # POST /api/residentes/        → crear residente   (T-19)
+    
     path(
         "residentes/", ResidenteListCreateView.as_view(), name="residente-list-create"
     ),
-    # GET   /api/residentes/{id}/  → detalle completo (T-21)
-    # PUT   /api/residentes/{id}/  → edición total    (T-22)
-    # PATCH /api/residentes/{id}/  → edición parcial  (T-22)
     path(
-        "residentes/<int:pk>/", ResidenteDetailView.as_view(), name="residente-detail"
+        "residentes/resumen-dashboard/",
+        ResumenDashboardResidentesView.as_view(),
+        name="residentes-resumen-dashboard",
     ),
+    path("residentes/<int:pk>/", ResidenteDetailView.as_view(), name="residente-detail"),
     # PATCH /api/residentes/{id}/estado/  → cambiar estado (T-23)
     path(
         "residentes/<int:pk>/estado/",
@@ -79,5 +75,11 @@ urlpatterns = [
         "residentes/<int:pk>/turnos/",
         TurnoMedicoListCreateView.as_view(),
         name="turno-list-create",
+    ),
+    # PATCH /api/residentes/{id}/turnos/{turno_id}/  → editar (solo admin)
+    path(
+        "residentes/<int:pk>/turnos/<int:turno_id>/",
+        TurnoMedicoDetailView.as_view(),
+        name="turno-detail",
     ),
 ]

@@ -5,6 +5,8 @@ from .views import (
     ActividadCancelarView,
     ActividadResidenteView,
     ActividadRealizadaView,
+    ActividadesResumenDashboardView,
+
 )
 
 urlpatterns = [
@@ -33,5 +35,10 @@ urlpatterns = [
     "actividades/<int:pk>/realizada/",
     ActividadRealizadaView.as_view(),
     name="actividad-realizada",
-),
+    ),
+    path(
+        "actividades/resumen-dashboard/",
+        ActividadesResumenDashboardView.as_view(),
+        name="actividades-resumen-dashboard",
+    ),
 ]

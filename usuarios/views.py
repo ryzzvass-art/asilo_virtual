@@ -2,6 +2,8 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
+from usuarios.permissions import  PuedeEditarUsuario
+from .serializers import UsuarioUpdateSerializer
 from usuarios.serializers import (
     UsuarioSerializer,
     UsuarioListSerializer,
@@ -19,12 +21,47 @@ from .serializers import ConfirmarResetSerializer
 from .serializers import CambiarEstadoUsuarioSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView
 from .serializers import CustomTokenObtainPairSerializer
-from auditoria.mixins import AuditLogMixin, serializar_instancia
+from auditoria.mixins import (
+    AuditLogMixin,
+    serializar_instancia,
+    registrar_auditoria,
+)
 from django.template.loader import render_to_string
 
 
+# ── Helper de auditoría para usuarios ─────────────────────────
+# El modelo Usuario incluye el campo 'password' (hash). Nunca debe entrar
+# al log de auditoría, así que saneamos el snapshot antes de registrarlo.
+CAMPOS_SENSIBLES = {"password", "last_login", "is_superuser"}
 
-class UsuarioViewSet(viewsets.ModelViewSet):
+
+def snapshot_usuario(usuario):
+    """Snapshot serializable del usuario SIN campos sensibles (password)."""
+    datos = serializar_instancia(usuario)
+    if isinstance(datos, dict):
+        for campo in CAMPOS_SENSIBLES:
+            datos.pop(campo, None)
+    return datos
+
+
+def auditar_usuario(request, accion, usuario, datos_antes=None, datos_despues=None):
+    """
+    Registra una entrada de auditoría para un usuario, garantizando que el
+    snapshot va saneado (sin password). Se usa registrar_auditoria directamente
+    en vez de audit_crear/audit_editar, porque esos métodos re-serializan la
+    instancia internamente y volverían a incluir el campo password.
+    """
+    registrar_auditoria(
+        request=request,
+        accion=accion,
+        entidad_nombre="usuarios",
+        entidad_id=usuario.pk,
+        datos_anteriores=datos_antes,
+        datos_nuevos=datos_despues,
+    )
+
+
+class UsuarioViewSet(AuditLogMixin, viewsets.ModelViewSet):
     """
     ViewSet para gestión de usuarios.
 
@@ -37,33 +74,86 @@ class UsuarioViewSet(viewsets.ModelViewSet):
     - DELETE /api/usuarios/{id}/     → eliminar (no lo usaremos)
     """
 
+    # Entidad para el log de auditoría
+    audit_entidad = "usuarios"
+
     # Qué datos se consultan — solo usuarios activos e inactivos,
     # ordenados por fecha de creación más reciente primero
     queryset = Usuario.objects.all().order_by("-created_at")
 
     def get_serializer_class(self):
-        """
-        Usa un serializer diferente según la acción:
-        - Si es crear (create) → UsuarioSerializer (con password y validaciones)
-        - Para todo lo demás  → UsuarioListSerializer (sin datos sensibles)
-        """
         if self.action == "create":
             return UsuarioSerializer
+        if self.action in ["update", "partial_update"]:
+            return UsuarioUpdateSerializer
         return UsuarioListSerializer
 
     def get_permissions(self):
-        """
-        Define quién puede hacer qué en cada acción:
-        - Crear usuario:         solo Administrador
-        - Listar usuarios:       solo Administrador
-        - Ver detalle:           Administrador o Cuidador
-        - Cambiar estado:        solo Administrador
-        """
         if self.action in ["create", "list", "cambiar_estado"]:
             permission_classes = [IsAdministrador]
+        elif self.action in ["update", "partial_update"]:
+            permission_classes = [PuedeEditarUsuario]
         else:
             permission_classes = [IsAdminOrCuidador]
         return [permission() for permission in permission_classes]
+
+    def update(self, request, *args, **kwargs):
+        """
+        Edita un usuario. Antes de validar, aplica dos reglas de negocio
+        que dependen de QUIÉN edita a QUIÉN:
+
+        Regla A — Password de cuidadores intocable:
+          Si el usuario objetivo es un cuidador, se elimina 'password'
+          de los datos entrantes (un admin no puede cambiarlo).
+
+        Regla B — Rol propio fijo:
+          Si el admin se está editando a sí mismo, se elimina 'rol'
+          para que no pueda cambiar su propio rol por accidente.
+
+        El permiso PuedeEditarUsuario ya garantizó que el editor puede
+        tocar este registro; aquí solo recortamos campos.
+        """
+        instance = self.get_object()  # dispara has_object_permission
+
+        # AUDITORÍA: snapshot ANTES de editar (sin password)
+        antes = snapshot_usuario(instance)
+
+        # request.data puede ser inmutable (QueryDict); copiamos para editar.
+        data = request.data.copy()
+
+        # Regla A: objetivo cuidador → fuera el password.
+        if instance.rol == "cuidador":
+            data.pop("password", None)
+
+        # Regla B: editándose a sí mismo → fuera el rol.
+        if instance.pk == request.user.pk:
+            data.pop("rol", None)
+
+        partial = kwargs.pop("partial", False)
+        serializer = self.get_serializer(instance, data=data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+
+        # AUDITORÍA: registrar edición con snapshot antes/después (sin password)
+        instance.refresh_from_db()
+        auditar_usuario(
+            request, "editar", instance,
+            datos_antes=antes,
+            datos_despues=snapshot_usuario(instance),
+        )
+
+        return Response(
+            {
+                "mensaje": "Usuario actualizado correctamente.",
+                "usuario": UsuarioListSerializer(instance).data,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    def partial_update(self, request, *args, **kwargs):
+        # PATCH reutiliza update() con partial=True.
+        kwargs["partial"] = True
+        return self.update(request, *args, **kwargs)
 
     def create(self, request, *args, **kwargs):
         """
@@ -75,6 +165,14 @@ class UsuarioViewSet(viewsets.ModelViewSet):
 
         if serializer.is_valid():
             usuario = serializer.save()
+
+            # AUDITORÍA: registrar creación de usuario (snapshot sin password)
+            auditar_usuario(
+                request, "crear", usuario,
+                datos_antes=None,
+                datos_despues=snapshot_usuario(usuario),
+            )
+
             return Response(
                 {
                     "mensaje": "Usuario creado correctamente.",
@@ -111,6 +209,10 @@ class UsuarioViewSet(viewsets.ModelViewSet):
         cambiamos estado a 'inactivo'.
         """
         usuario = self.get_object()
+
+        # AUDITORÍA: snapshot ANTES de cambiar el estado (sin password)
+        antes = snapshot_usuario(usuario)
+
         nuevo_estado = request.data.get("estado")
 
         # Validar que el estado sea válido
@@ -123,6 +225,13 @@ class UsuarioViewSet(viewsets.ModelViewSet):
 
         usuario.estado = nuevo_estado
         usuario.save()
+
+        # AUDITORÍA: registrar cambio de estado (snapshot sin password)
+        auditar_usuario(
+            request, "editar", usuario,
+            datos_antes=antes,
+            datos_despues=snapshot_usuario(usuario),
+        )
 
         return Response(
             {
@@ -313,8 +422,8 @@ class UsuarioEstadoView(AuditLogMixin, APIView):
             return Response(
                 {"error": "Usuario no encontrado."}, status=status.HTTP_404_NOT_FOUND
             )
-       # A2 - Snapshot antes de modificar
-        antes = serializar_instancia(usuario)
+       # A2 - Snapshot antes de modificar (sin password)
+        antes = snapshot_usuario(usuario)
         # Seguridad: un admin no puede desactivarse a sí mismo
         if request.user.pk == usuario.pk:
             return Response(
@@ -332,8 +441,12 @@ class UsuarioEstadoView(AuditLogMixin, APIView):
         usuario.estado = nuevo_estado
         usuario.save(update_fields=["estado"])
 
-        # A3 - Registrar auditoría
-        self.audit_editar(request, antes, usuario)
+        # A3 - Registrar auditoría (snapshot sin password)
+        auditar_usuario(
+            request, "editar", usuario,
+            datos_antes=antes,
+            datos_despues=snapshot_usuario(usuario),
+        )
 
         return Response(
             {

@@ -25,6 +25,7 @@ class CatalogoMedicamento(models.Model):
         max_length=100
     )  # comprimido, jarabe, inyectable, etc.
     contraindicaciones = models.TextField(blank=True, default="")
+    observaciones = models.TextField(blank=True, default="")
     estado = models.CharField(
         max_length=20,
         choices=Estado.choices,
@@ -36,6 +37,7 @@ class CatalogoMedicamento(models.Model):
         related_name="medicamentos_creados",
     )
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         db_table = "catalogo_medicamentos"
@@ -63,6 +65,7 @@ class StockMedicamento(models.Model):
     fecha_vencimiento = models.DateField()
     umbral_minimo = models.IntegerField(default=10)  # Alerta si cantidad <= este valor
     lote = models.CharField(max_length=100)  # Número de lote del proveedor
+    observaciones = models.TextField(blank=True, default="")
 
     actualizado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -145,6 +148,7 @@ class AdministracionMedicamento(models.Model):
         null=True, blank=True
     )  # Cuándo se administró
     observacion = models.TextField(blank=True, default="")  # Motivo si omitido
+    corregida = models.BooleanField(default=False)  # True si ya se corrigió una vez (dentro de 2h)
 
     class Meta:
         db_table = "administraciones_medicamento"
@@ -153,3 +157,64 @@ class AdministracionMedicamento(models.Model):
     def __str__(self):
         estado = "✓" if self.administrado else "✗"
         return f"{estado} {self.residente_medicamento} — {self.fecha_hora_programada:%Y-%m-%d %H:%M}"
+
+class MovimientoStock(models.Model):
+    """
+    Trazabilidad de stock: registra cada entrada/salida/devolución por lote.
+    - entrada:    ingreso de un nuevo lote (o reposición)
+    - salida:     descuento por administración de una toma
+    - devolucion: reversión al corregir una administración (administrada → omitida)
+
+    La cantidad SIEMPRE se guarda en positivo; el campo 'tipo' indica el sentido.
+    'lote' es SET_NULL para conservar el historial aunque el lote se elimine.
+    'administracion' enlaza la salida con la toma que la causó (necesario para revertir).
+    """
+
+    class Tipo(models.TextChoices):
+        ENTRADA = "entrada", "Entrada"
+        SALIDA = "salida", "Salida"
+        DEVOLUCION = "devolucion", "Devolución"
+
+    lote = models.ForeignKey(
+        StockMedicamento,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="movimientos",
+    )
+    # Redundante con lote.medicamento, pero se conserva si el lote se borra (SET_NULL).
+    medicamento = models.ForeignKey(
+        CatalogoMedicamento,
+        on_delete=models.CASCADE,
+        related_name="movimientos_stock",
+    )
+    tipo = models.CharField(max_length=20, choices=Tipo.choices)
+    cantidad = models.PositiveIntegerField()  # siempre positivo
+    motivo = models.CharField(max_length=255, blank=True, default="")
+    # Enlaza la salida con la administración que la causó (para poder revertir).
+    administracion = models.ForeignKey(
+        AdministracionMedicamento,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="movimientos_stock",
+    )
+    realizado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="movimientos_stock_realizados",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "movimientos_stock"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["medicamento"], name="idx_movstock_medicamento"),
+            models.Index(fields=["tipo"], name="idx_movstock_tipo"),
+            models.Index(fields=["created_at"], name="idx_movstock_fecha"),
+        ]
+
+    def __str__(self):
+        signo = "+" if self.tipo == self.Tipo.ENTRADA else "−"
+        return f"{signo}{self.cantidad} {self.medicamento.nombre_comercial} ({self.tipo})"

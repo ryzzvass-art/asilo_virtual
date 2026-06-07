@@ -3,7 +3,9 @@ from rest_framework.response import Response
 from rest_framework import status
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from auditoria.mixins import AuditLogMixin,serializar_instancia
+from django.db.models import Q, Count
+from datetime import timedelta
+from auditoria.mixins import AuditLogMixin, serializar_instancia
 
 from .models import Visitante, VisitanteResidente, RegistroVisita
 from .serializers import (
@@ -17,11 +19,15 @@ from residentes.models import Residente
 # ── T-82, T-83 — Visitantes y Autorizaciones ──────────────
 
 
-class VisitanteListCreateView(APIView):
+class VisitanteListCreateView(AuditLogMixin, APIView):
     """
-    GET  /api/visitantes/  → listar visitantes (filtro ?nombre= y ?dni=)
+    GET  /api/visitantes/  → listar visitantes
+                             Filtros: ?busqueda= (nombre O C.I.),
+                             ?nombre= y ?dni= (compatibilidad)
     POST /api/visitantes/  → registrar visitante (solo Admin)
     """
+
+    audit_entidad = "visitantes"
 
     def get_permissions(self):
         if self.request.method == "POST":
@@ -29,13 +35,23 @@ class VisitanteListCreateView(APIView):
         return [IsAdminOrCuidador()]
 
     def get(self, request):
-        nombre = request.query_params.get("nombre")
-        dni    = request.query_params.get("dni")
         queryset = Visitante.objects.all().select_related("registrado_por")
+
+        # Búsqueda unificada: nombre O C.I. en una sola query
+        busqueda = request.query_params.get("busqueda")
+        if busqueda:
+            queryset = queryset.filter(
+                Q(nombre__icontains=busqueda) | Q(dni__icontains=busqueda)
+            )
+
+        # Filtros individuales (compatibilidad con código existente)
+        nombre = request.query_params.get("nombre")
+        dni = request.query_params.get("dni")
         if nombre:
             queryset = queryset.filter(nombre__icontains=nombre)
         if dni:
             queryset = queryset.filter(dni__icontains=dni)
+
         serializer = VisitanteSerializer(queryset, many=True)
         return Response(serializer.data)
 
@@ -43,8 +59,46 @@ class VisitanteListCreateView(APIView):
         serializer = VisitanteSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        serializer.save(registrado_por=request.user)
+        visitante = serializer.save(registrado_por=request.user)
+
+        # Auditoría de creación
+        self.audit_crear(request, visitante)
+
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+class VisitanteDetailView(AuditLogMixin, APIView):
+    """
+    GET   /api/visitantes/{id}/  → detalle (admin y cuidador)
+    PATCH /api/visitantes/{id}/  → editar (solo admin) — nombre, dni, telefono
+    """
+
+    audit_entidad = "visitantes"
+
+    def get_permissions(self):
+        if self.request.method == "PATCH":
+            return [IsAdministrador()]
+        return [IsAdminOrCuidador()]
+
+    def get(self, request, pk):
+        visitante = get_object_or_404(Visitante, pk=pk)
+        return Response(VisitanteSerializer(visitante).data)
+
+    def patch(self, request, pk):
+        visitante = get_object_or_404(Visitante, pk=pk)
+
+        # Snapshot antes del cambio (para auditoría)
+        antes = serializar_instancia(visitante)
+
+        serializer = VisitanteSerializer(visitante, data=request.data, partial=True)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        visitante = serializer.save()
+
+        # Auditoría de edición
+        self.audit_editar(request, antes, visitante)
+
+        return Response(serializer.data)
 
 
 class VisitanteAutorizacionesView(APIView):
@@ -89,11 +143,11 @@ class AutorizarVisitanteView(AuditLogMixin, APIView):
                     {"error": "Este visitante ya está autorizado para este residente."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-            
+
             # Reactivar si estaba suspendido
             # A2 - snapshot
             antes = serializar_instancia(existente)
-            
+
             existente.estado = "activo"
             existente.autorizado_por = request.user
             existente.save(update_fields=["estado", "autorizado_por"])
@@ -120,11 +174,13 @@ class AutorizarVisitanteView(AuditLogMixin, APIView):
         )
 
 
-class SuspenderAutorizacionView(APIView):
+class SuspenderAutorizacionView(AuditLogMixin, APIView):
     """
     PATCH /api/visitantes/{id}/autorizar/{residente_id}/suspender/
     T-83: Suspender autorización — bloquea futuros registros de visita.
     """
+
+    audit_entidad = "autorizaciones_visitantes"
 
     permission_classes = [IsAdministrador]
 
@@ -137,8 +193,16 @@ class SuspenderAutorizacionView(APIView):
                 {"error": "Esta autorización ya está suspendida."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        # Snapshot antes del cambio
+        antes = serializar_instancia(vr)
+
         vr.estado = "suspendido"
         vr.save(update_fields=["estado"])
+
+        # Auditoría de edición (suspender)
+        self.audit_editar(request, antes, vr)
+
         return Response(
             {
                 "mensaje": "Autorización suspendida. El visitante no podrá registrar nuevas visitas.",
@@ -150,13 +214,20 @@ class SuspenderAutorizacionView(APIView):
 # ── T-84, T-85 — Registros de Visita ──────────────────────
 
 
-class RegistroVisitaListCreateView(APIView):
+class RegistroVisitaListCreateView(AuditLogMixin, APIView):
     """
-    GET  /api/visitas/  → listar visitas
-    POST /api/visitas/  → registrar ingreso (T-85)
+    GET  /api/visitas/  → listar visitas (admin y cuidador)
+                          Filtros: ?residente_id=, ?estado=,
+                          ?fecha_desde=, ?fecha_hasta=
+    POST /api/visitas/  → registrar ingreso (solo admin)
     """
 
-    permission_classes = [IsAdminOrCuidador]
+    audit_entidad = "registros_visita"
+
+    def get_permissions(self):
+        if self.request.method == "POST":
+            return [IsAdministrador()]
+        return [IsAdminOrCuidador()]
 
     def get(self, request):
         queryset = RegistroVisita.objects.all().select_related(
@@ -168,9 +239,19 @@ class RegistroVisitaListCreateView(APIView):
         residente_id = request.query_params.get("residente_id")
         if residente_id:
             queryset = queryset.filter(visitante_residente__residente_id=residente_id)
+
         estado = request.query_params.get("estado")
         if estado:
             queryset = queryset.filter(estado=estado)
+
+        # Filtros de fecha opcionales (mismos nombres que el historial por residente)
+        fecha_desde = request.query_params.get("fecha_desde")
+        fecha_hasta = request.query_params.get("fecha_hasta")
+        if fecha_desde:
+            queryset = queryset.filter(fecha_hora_entrada__date__gte=fecha_desde)
+        if fecha_hasta:
+            queryset = queryset.filter(fecha_hora_entrada__date__lte=fecha_hasta)
+
         serializer = RegistroVisitaSerializer(queryset, many=True)
         return Response(serializer.data)
 
@@ -215,17 +296,25 @@ class RegistroVisitaListCreateView(APIView):
             estado="en_curso",
             observaciones=request.data.get("observaciones", ""),
         )
+
+        # Auditoría de creación (registro de ingreso)
+        self.audit_crear(request, registro)
+
         return Response(
             RegistroVisitaSerializer(registro).data, status=status.HTTP_201_CREATED
         )
 
-class RegistroVisitaSalidaView(APIView):
+
+class RegistroVisitaSalidaView(AuditLogMixin, APIView):
     """
     PATCH /api/visitas/{id}/salida/
-    T-85: Registrar salida — actualiza fecha_hora_salida y estado=finalizada.
+    Registrar salida — actualiza fecha_hora_salida y estado=finalizada.
+    Solo administrador.
     """
 
-    permission_classes = [IsAdminOrCuidador]
+    audit_entidad = "registros_visita"
+
+    permission_classes = [IsAdministrador]
 
     def patch(self, request, pk):
         registro = get_object_or_404(RegistroVisita, pk=pk)
@@ -236,9 +325,15 @@ class RegistroVisitaSalidaView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # Snapshot antes del cambio
+        antes = serializar_instancia(registro)
+
         registro.fecha_hora_salida = timezone.now()
         registro.estado = "finalizada"
         registro.save(update_fields=["fecha_hora_salida", "estado"])
+
+        # Auditoría de edición (registro de salida)
+        self.audit_editar(request, antes, registro)
 
         return Response(RegistroVisitaSerializer(registro).data)
 
@@ -278,7 +373,8 @@ class HistorialVisitasResidenteView(APIView):
 
         serializer = RegistroVisitaSerializer(queryset, many=True)
         return Response(serializer.data)
-    
+
+
 class ResidenteAutorizacionesView(APIView):
     """
     GET /api/residentes/{residente_id}/autorizaciones/
@@ -293,3 +389,139 @@ class ResidenteAutorizacionesView(APIView):
         ).select_related("visitante", "autorizado_por")
         serializer = VisitanteResidenteSerializer(autorizaciones, many=True)
         return Response(serializer.data)
+
+
+# ── Resumen para el Dashboard ──────────────────────────────
+
+
+class ResumenDashboardVisitasView(APIView):
+    """
+    GET /api/visitas/resumen-dashboard/
+    Métricas agregadas + listas para los modales del Dashboard.
+    """
+    permission_classes = [IsAdminOrCuidador]
+
+    def get(self, request):
+        hoy = timezone.localdate()
+        inicio_semana = hoy - timedelta(days=6)  # últimos 7 días incluyendo hoy
+
+        # ── Contadores ──
+        visitantes_total = Visitante.objects.count()
+        visitantes_con_autorizacion_qs = (
+            Visitante.objects
+            .filter(autorizaciones__estado="activo")
+            .distinct()
+        )
+        visitantes_con_autorizacion = visitantes_con_autorizacion_qs.count()
+
+        autorizaciones_activas     = VisitanteResidente.objects.filter(estado="activo").count()
+        autorizaciones_suspendidas = VisitanteResidente.objects.filter(estado="suspendido").count()
+
+        visitas_hoy_qs = (
+            RegistroVisita.objects
+            .filter(fecha_hora_entrada__date=hoy)
+            .select_related(
+                "visitante_residente__visitante",
+                "visitante_residente__residente",
+            )
+            .order_by("-fecha_hora_entrada")
+        )
+        visitas_hoy = visitas_hoy_qs.count()
+
+        en_curso_qs = (
+            RegistroVisita.objects
+            .filter(estado="en_curso")
+            .select_related(
+                "visitante_residente__visitante",
+                "visitante_residente__residente",
+            )
+            .order_by("-fecha_hora_entrada")
+        )
+        visitas_en_curso_count = en_curso_qs.count()
+
+        # ── Helpers ──
+        def fmt_residente(r):
+            return f"{r.nombre} {r.apellido}"
+
+        def fmt_hora(dt):
+            return timezone.localtime(dt).strftime("%H:%M")
+
+        # ── Listas para los modales ──
+        visitas_en_curso = [
+            {
+                "id": v.id,
+                "visitante":          v.visitante_residente.visitante.nombre,
+                "visitante_dni":      v.visitante_residente.visitante.dni,
+                "residente":          fmt_residente(v.visitante_residente.residente),
+                "fecha_hora_entrada": v.fecha_hora_entrada.isoformat(),
+            }
+            for v in en_curso_qs[:8]
+        ]
+
+        visitas_hoy_lista = [
+            {
+                "visitante": v.visitante_residente.visitante.nombre,
+                "residente": fmt_residente(v.visitante_residente.residente),
+                "hora":      fmt_hora(v.fecha_hora_entrada),
+            }
+            for v in visitas_hoy_qs[:50]
+        ]
+
+        visitantes_lista = [
+            {"nombre": v.nombre, "dni": v.dni, "telefono": v.telefono or "—"}
+            for v in Visitante.objects.order_by("nombre")[:200]
+        ]
+
+        visitantes_con_autorizacion_lista = [
+            {"nombre": v.nombre, "dni": v.dni}
+            for v in visitantes_con_autorizacion_qs.order_by("nombre")[:200]
+        ]
+
+        suspendidas_qs = (
+            VisitanteResidente.objects
+            .filter(estado="suspendido")
+            .select_related("visitante", "residente")
+            .order_by("-fecha_autorizacion")
+        )
+        autorizaciones_suspendidas_lista = [
+            {
+                "visitante": a.visitante.nombre,
+                "residente": fmt_residente(a.residente),
+                "relacion":  a.relacion,
+            }
+            for a in suspendidas_qs[:100]
+        ]
+
+        # ── Gráfico últimos 7 días ──
+        agrupado = (
+            RegistroVisita.objects
+            .filter(fecha_hora_entrada__date__gte=inicio_semana)
+            .values("fecha_hora_entrada__date")
+            .annotate(total=Count("id"))
+        )
+        mapa = {row["fecha_hora_entrada__date"]: row["total"] for row in agrupado}
+        visitas_ultimos_7_dias = []
+        for i in range(7):
+            fecha = inicio_semana + timedelta(days=i)
+            visitas_ultimos_7_dias.append({
+                "fecha": fecha.isoformat(),
+                "total": mapa.get(fecha, 0),
+            })
+
+        return Response({
+            # Métricas
+            "visitantes_total":               visitantes_total,
+            "visitantes_con_autorizacion":    visitantes_con_autorizacion,
+            "autorizaciones_activas":         autorizaciones_activas,
+            "autorizaciones_suspendidas":     autorizaciones_suspendidas,
+            "visitas_hoy":                    visitas_hoy,
+            "visitas_en_curso_count":         visitas_en_curso_count,
+            # Listas
+            "visitas_en_curso":               visitas_en_curso,
+            "visitas_hoy_lista":              visitas_hoy_lista,
+            "visitantes_lista":               visitantes_lista,
+            "visitantes_con_autorizacion_lista": visitantes_con_autorizacion_lista,
+            "autorizaciones_suspendidas_lista":  autorizaciones_suspendidas_lista,
+            # Gráfico
+            "visitas_ultimos_7_dias":         visitas_ultimos_7_dias,
+        })

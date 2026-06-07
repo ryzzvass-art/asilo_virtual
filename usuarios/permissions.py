@@ -38,3 +38,38 @@ class IsAdminOrCuidador(BasePermission):
             "administrador",
             "cuidador",
         ]
+class PuedeEditarUsuario(BasePermission):
+    """
+    Reglas de edición de usuarios:
+    - Un administrador puede editar SUS PROPIOS datos (y solo los suyos
+      entre los administradores).
+    - Un administrador puede editar los datos de CUALQUIER cuidador.
+    - Un cuidador no puede editar a nadie.
+
+    Nota: la restricción de "no tocar el password de un cuidador" NO se
+    decide aquí (esto solo dice sí/no al registro completo). Eso se maneja
+    en el serializer/vista, porque es una regla sobre un CAMPO, no sobre
+    el permiso de editar el registro.
+    """
+
+    message = "No tienes permiso para editar este usuario."
+
+    def has_permission(self, request, view):
+        # Puerta de entrada: solo administradores autenticados pueden
+        # siquiera intentar editar. (Los cuidadores quedan fuera aquí.)
+        return request.user.is_authenticated and request.user.rol == "administrador"
+
+    def has_object_permission(self, request, view, obj):
+        # 'obj' es el Usuario que se quiere editar.
+        editor = request.user
+
+        # Caso 1: se está editando a sí mismo → permitido.
+        if obj.pk == editor.pk:
+            return True
+
+        # Caso 2: el objetivo es un cuidador → permitido.
+        if obj.rol == "cuidador":
+            return True
+
+        # Caso 3: el objetivo es OTRO administrador → prohibido.
+        return False

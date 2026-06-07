@@ -15,7 +15,11 @@ class Residente(models.Model):
 
     nombre = models.CharField(max_length=100)
     apellido = models.CharField(max_length=100)
-    dni = models.CharField(max_length=20, unique=True)  # No puede repetirse
+    dni = models.CharField(
+        max_length=20,
+        unique=True,
+        error_messages={"unique": "Ya existe un residente con este C.I."},
+    )  
     fecha_nacimiento = models.DateField()
     fecha_ingreso = models.DateField()
     estado = models.CharField(
@@ -73,6 +77,8 @@ class HistorialMedico(models.Model):
     alergias = models.TextField(blank=True, default="")
     # condiciones_cronicas alimenta la sugerencia automática de restricciones (RF-22-C, Sprint 6)
     condiciones_cronicas = models.TextField(blank=True, default="")
+    tratamiento = models.TextField(blank=True, default="")
+
 
     actualizado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -112,6 +118,7 @@ class ContactoEmergencia(models.Model):
     )
     tipo = models.CharField(max_length=20, choices=Tipo.choices)
     nombre = models.CharField(max_length=150)
+    dni = models.CharField(max_length=20, blank=True, default="")
     relacion_cargo = models.CharField(max_length=100)
     telefono = models.CharField(max_length=20)
     email = models.EmailField(blank=True, default="")

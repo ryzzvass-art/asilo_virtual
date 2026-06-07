@@ -28,12 +28,13 @@ class CatalogoMedicamentoSerializer(serializers.ModelSerializer):
             "tipo",
             "forma_farmaceutica",
             "contraindicaciones",
+            "observaciones",
             "estado",
             "creado_por",
             "creado_por_nombre",
             "created_at",
         ]
-        read_only_fields = ["creado_por", "creado_por_nombre", "estado", "created_at"]
+        read_only_fields = ["creado_por", "creado_por_nombre", "estado", "created_at","observaciones",]
 
     def get_creado_por_nombre(self, obj):
         return f"{obj.creado_por.nombre} {obj.creado_por.apellido}"
@@ -50,6 +51,7 @@ class CatalogoMedicamentoEditarSerializer(serializers.ModelSerializer):
             "tipo",
             "forma_farmaceutica",
             "contraindicaciones",
+            "observaciones",
         ]
 
 
@@ -64,6 +66,8 @@ class StockMedicamentoSerializer(serializers.ModelSerializer):
 
     actualizado_por_nombre = serializers.SerializerMethodField()
     alerta = serializers.SerializerMethodField()
+    tiene_administraciones = serializers.SerializerMethodField()
+    unidad = serializers.SerializerMethodField()          # ← Añadido
 
     class Meta:
         model = StockMedicamento
@@ -74,6 +78,8 @@ class StockMedicamentoSerializer(serializers.ModelSerializer):
             "fecha_vencimiento",
             "umbral_minimo",
             "lote",
+            "observaciones",                    # ← Añadido
+            "tiene_administraciones",
             "actualizado_por",
             "actualizado_por_nombre",
             "updated_at",
@@ -84,6 +90,7 @@ class StockMedicamentoSerializer(serializers.ModelSerializer):
             "actualizado_por_nombre",
             "updated_at",
             "alerta",
+            "unidad",                           # Ahora es de solo lectura
         ]
 
     def get_actualizado_por_nombre(self, obj):
@@ -99,6 +106,16 @@ class StockMedicamentoSerializer(serializers.ModelSerializer):
             alertas.append("vencimiento_proximo")
         return alertas
 
+    def get_tiene_administraciones(self, obj):
+        return obj.movimientos.filter(
+            tipo="salida", administracion__isnull=False
+        ).exists()
+
+    def get_unidad(self, obj):
+        # La unidad SIEMPRE refleja la forma farmacéutica actual del medicamento
+        # (corrección 1: editar el medicamento actualiza la unidad de todos sus lotes).
+        return obj.medicamento.forma_farmaceutica
+
     def validate_fecha_vencimiento(self, value):
         """T-44: Lote con fecha_vencimiento pasada devuelve 400."""
         if value <= timezone.now().date():
@@ -108,11 +125,14 @@ class StockMedicamentoSerializer(serializers.ModelSerializer):
         return value
 
     def validate_cantidad(self, value):
-        if value < 0:
-            raise serializers.ValidationError("La cantidad no puede ser negativa.")
+        if value <= 0:
+            raise serializers.ValidationError(
+                "La cantidad debe ser mayor a 0 para registrar un lote."
+            )
         return value
 
 
+# Resto de serializers sin cambios...
 class ResidenteMedicamentoSerializer(serializers.ModelSerializer):
     """
     Para crear y listar prescripciones.
@@ -121,6 +141,8 @@ class ResidenteMedicamentoSerializer(serializers.ModelSerializer):
 
     prescrito_por_nombre = serializers.SerializerMethodField()
     medicamento_nombre = serializers.SerializerMethodField()
+    num_administraciones = serializers.SerializerMethodField()
+    medicamento_estado = serializers.SerializerMethodField()
 
     class Meta:
         model = ResidenteMedicamento
@@ -137,6 +159,8 @@ class ResidenteMedicamentoSerializer(serializers.ModelSerializer):
             "fecha_inicio",
             "fecha_fin",
             "estado",
+            "num_administraciones",
+            "medicamento_estado",
             "created_at",
         ]
         read_only_fields = [
@@ -153,6 +177,12 @@ class ResidenteMedicamentoSerializer(serializers.ModelSerializer):
 
     def get_medicamento_nombre(self, obj):
         return obj.medicamento.nombre_comercial
+    
+    def get_num_administraciones(self, obj):
+        return obj.administraciones.count()
+
+    def get_medicamento_estado(self, obj):
+        return obj.medicamento.estado
 
     def validate_medicamento(self, value):
         """T-49: medicamento archivado devuelve 400."""
@@ -184,9 +214,6 @@ class PrescripcionFinalizarSerializer(serializers.Serializer):
     fecha_fin = serializers.DateField(required=False)
 
 
-# ── T-51, T-52, T-53 — Administraciones ───────────────────
-
-
 class AdministracionMedicamentoSerializer(serializers.ModelSerializer):
     """
     Para registrar y consultar tomas.
@@ -195,6 +222,7 @@ class AdministracionMedicamentoSerializer(serializers.ModelSerializer):
 
     realizado_por_nombre = serializers.SerializerMethodField()
     residente_nombre = serializers.SerializerMethodField()
+    medicamento_nombre = serializers.SerializerMethodField()   # ← Añadido
 
     class Meta:
         model = AdministracionMedicamento
@@ -204,12 +232,20 @@ class AdministracionMedicamentoSerializer(serializers.ModelSerializer):
             "realizado_por",
             "realizado_por_nombre",
             "residente_nombre",
+            "medicamento_nombre",                    
             "administrado",
             "fecha_hora_programada",
             "fecha_hora_real",
             "observacion",
+            "corregida",
         ]
-        read_only_fields = ["realizado_por", "realizado_por_nombre", "residente_nombre"]
+        read_only_fields = [
+            "realizado_por", 
+            "realizado_por_nombre", 
+            "residente_nombre",
+            "medicamento_nombre",
+            "corregida"                    
+        ]
 
     def get_realizado_por_nombre(self, obj):
         return f"{obj.realizado_por.nombre} {obj.realizado_por.apellido}"
@@ -217,6 +253,9 @@ class AdministracionMedicamentoSerializer(serializers.ModelSerializer):
     def get_residente_nombre(self, obj):
         r = obj.residente_medicamento.residente
         return f"{r.nombre} {r.apellido}"
+
+    def get_medicamento_nombre(self, obj):
+        return obj.residente_medicamento.medicamento.nombre_comercial   # ← Añadido
 
     def validate(self, data):
         """T-52: administrado=False sin observacion devuelve 400."""
@@ -235,9 +274,39 @@ class AdministracionMedicamentoSerializer(serializers.ModelSerializer):
 class AdministracionResumenSerializer(serializers.Serializer):
     """
     T-55: Resumen de administraciones en un período.
-    total_programadas, total_administradas, total_omitidas.
     """
 
     total_programadas = serializers.IntegerField()
     total_administradas = serializers.IntegerField()
     total_omitidas = serializers.IntegerField()
+
+
+class MovimientoStockSerializer(serializers.ModelSerializer):
+    """
+    Para listar movimientos de stock de un medicamento (historial de trazabilidad).
+    """
+
+    realizado_por_nombre = serializers.SerializerMethodField()
+    lote_nombre = serializers.SerializerMethodField()
+    tipo_display = serializers.CharField(source="get_tipo_display", read_only=True)
+
+    class Meta:
+        from .models import MovimientoStock
+        model = MovimientoStock
+        fields = [
+            "id",
+            "tipo",
+            "tipo_display",
+            "cantidad",
+            "motivo",
+            "lote",
+            "lote_nombre",
+            "realizado_por_nombre",
+            "created_at",
+        ]
+
+    def get_realizado_por_nombre(self, obj):
+        return f"{obj.realizado_por.nombre} {obj.realizado_por.apellido}"
+
+    def get_lote_nombre(self, obj):
+        return obj.lote.lote if obj.lote else "—"

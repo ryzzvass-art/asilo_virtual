@@ -227,3 +227,66 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         }
 
         return data
+class UsuarioUpdateSerializer(serializers.ModelSerializer):
+    """
+    Serializer para EDITAR usuarios (PUT/PATCH).
+
+    - 'password' es opcional y write_only. Si viene, se re-encripta.
+    - 'email' valida unicidad excluyendo al propio usuario.
+    - La lógica de "a un cuidador no se le cambia el password" y
+      "un admin no cambia su propio rol" se aplica en la vista,
+      porque depende de QUIÉN edita a QUIÉN (contexto del request).
+    """
+
+    password = serializers.CharField(
+        write_only=True,
+        required=False,        # opcional: editar sin tocar la contraseña
+        allow_blank=True,      # si llega vacío, lo ignoramos en update()
+        min_length=8,
+        error_messages={
+            "min_length": "La contraseña debe tener al menos 8 caracteres."
+        },
+    )
+
+    class Meta:
+        model = Usuario
+        fields = ["id", "nombre", "apellido", "email", "password", "rol", "estado"]
+        # 'estado' sigue gestionándose por su endpoint dedicado (soft delete),
+        # así que lo dejamos de solo lectura aquí para no duplicar caminos.
+        read_only_fields = ["id", "estado"]
+
+    def validate_email(self, value):
+        value = value.lower()
+        # Excluir al propio usuario de la verificación de duplicados,
+        # si no, editar sin cambiar el email daría "ya existe".
+        qs = Usuario.objects.filter(email=value)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError(
+                "Ya existe un usuario registrado con este email."
+            )
+        return value
+
+    def validate_rol(self, value):
+        roles_validos = [Usuario.Rol.ADMINISTRADOR, Usuario.Rol.CUIDADOR]
+        if value not in roles_validos:
+            raise serializers.ValidationError(
+                "Rol inválido. Debe ser 'administrador' o 'cuidador'."
+            )
+        return value
+
+    def update(self, instance, validated_data):
+        # Sacamos el password para tratarlo aparte (encriptado).
+        password = validated_data.pop("password", None)
+
+        # Actualizamos el resto de campos normalmente.
+        for campo, valor in validated_data.items():
+            setattr(instance, campo, valor)
+
+        # Solo cambiamos la contraseña si vino con contenido real.
+        if password:
+            instance.set_password(password)
+
+        instance.save()
+        return instance
