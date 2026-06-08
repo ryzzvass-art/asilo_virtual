@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 set -o errexit
 
+echo "📦 Instalando dependencias..."
 pip install -r requirements.txt
-python manage.py collectstatic --no-input
-python manage.py migrate
-python manage.py crear_admin
+
+echo "📁 Recolectando archivos estáticos..."
+python manage.py collectstatic --no-input --clear
+
+echo "✅ Build completado."
